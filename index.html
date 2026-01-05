@@ -46,18 +46,20 @@
     margin-bottom: 4px;
   }
 
-  .heart, .food {
-    width: 20px;
-    height: 20px;
-  }
+.heart, .food {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+}
 
-  .heart {
-    background: red;
-  }
+.heart {
+  background: linear-gradient(#ff4d4d, #b30000);
+}
 
-  .food {
-    background: orange;
-  }
+.food {
+  background: linear-gradient(#ffb347, #ff7a00);
+}
+
 
   #hotbar {
     display: flex;
@@ -192,15 +194,26 @@ for (let x = -20; x < 20; x++) {
    FIRST‑PERSON CONTROLS
 ========================= */
 camera.position.set(0, 2, 5);
-
 let pitch = 0, yaw = 0;
 const keys = {};
 let sprint = false;
 
+let velocityY = 0;
+let onGround = false;
+const GRAVITY = -0.01;
+const JUMP_FORCE = 0.25;
+
 document.addEventListener("keydown", e => {
   keys[e.code] = true;
+
   if (e.code === "ShiftLeft") sprint = true;
+
+  if (e.code === "Space" && onGround) {
+    velocityY = JUMP_FORCE;
+    onGround = false;
+  }
 });
+
 document.addEventListener("keyup", e => {
   keys[e.code] = false;
   if (e.code === "ShiftLeft") sprint = false;
@@ -240,6 +253,16 @@ camera.rotation.x = pitch;
   if (keys["KeyS"]) camera.position.addScaledVector(forward, -speed);
   if (keys["KeyA"]) camera.position.addScaledVector(right, -speed);
   if (keys["KeyD"]) camera.position.addScaledVector(right, speed);
+// ===== GRAVITY + JUMP =====
+velocityY += GRAVITY;
+camera.position.y += velocityY;
+
+// Ground collision
+if (camera.position.y <= 2) {
+  camera.position.y = 2;
+  velocityY = 0;
+  onGround = true;
+}
 
   renderer.render(scene, camera);
 }
@@ -295,4 +318,5 @@ window.addEventListener("resize", () => {
 });
 </script>
 </body>
+ <div id="crosshair"></div>
 </html>
