@@ -3,7 +3,51 @@
 <head>
 <meta charset="UTF-8" />
 <title>Minecraft‑Style 3D</title>
-<style>
+#ui {
+  position: fixed;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  pointer-events: none;
+  font-family: monospace;
+}
+
+#hotbar {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+  margin-top: 6px;
+}
+
+.slot {
+  width: 40px;
+  height: 40px;
+  background: #777;
+  border: 3px solid #333;
+}
+
+.slot.selected {
+  border-color: white;
+}
+
+#health, #hunger {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.heart, .food {
+  width: 20px;
+  height: 20px;
+  background: red;
+}
+
+.food {
+  background: orange;
+}
+
   body { margin: 0; overflow: hidden; background: #87ceeb; }
   canvas { image-rendering: pixelated; }
   #crosshair {
@@ -18,7 +62,22 @@
 </style>
 </head>
 <body>
-<div id="crosshair"></div>
+<div id="ui">
+  <div id="health"></div>
+  <div id="hunger"></div>
+  <div id="hotbar">
+    <div class="slot selected"></div>
+    <div class="slot"></div>
+    <div class="slot"></div>
+    <div class="slot"></div>
+    <div class="slot"></div>
+    <div class="slot"></div>
+    <div class="slot"></div>
+    <div class="slot"></div>
+    <div class="slot"></div>
+  </div>
+</div>
+
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
 
@@ -177,3 +236,30 @@ window.addEventListener("resize", () => {
 </script>
 </body>
 </html>
+// =========================
+// UI SETUP (PHASE 2A)
+// =========================
+const healthEl = document.getElementById("health");
+const hungerEl = document.getElementById("hunger");
+
+let health = 10;
+let hunger = 10;
+
+function drawUI() {
+  healthEl.innerHTML = "";
+  hungerEl.innerHTML = "";
+
+  for (let i = 0; i < health; i++) {
+    const h = document.createElement("div");
+    h.className = "heart";
+    healthEl.appendChild(h);
+  }
+
+  for (let i = 0; i < hunger; i++) {
+    const f = document.createElement("div");
+    f.className = "food";
+    hungerEl.appendChild(f);
+  }
+}
+
+drawUI();
