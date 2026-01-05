@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Minecraft‑Style 3D</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #87ceeb; }
+  canvas { image-rendering: pixelated; }
+  #crosshair {
+    position: fixed;
+    top: 50%; left: 50%;
+    width: 10px; height: 10px;
+    margin-left: -5px; margin-top: -5px;
+    border: 2px solid white;
+    box-sizing: border-box;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div id="crosshair"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+
+<script>
+/* =========================
+   SCENE + CAMERA
+========================= */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
+
+const camera = new THREE.PerspectiveCamera(
+  75,
+  window.innerWidth / window.innerHeight,
+  0.1,
+  1000
+);
+
+const renderer = new THREE.WebGLRenderer({ antialias: false });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(1);
+document.body.appendChild(renderer.domElement);
+
+/* =========================
+   LIGHTING
+========================= */
+scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+const sun = new THREE.DirectionalLight(0xffffff, 0.6);
+sun.position.set(50, 100, 50);
+scene.add(sun);
+
+/* =========================
+   PIXEL TEXTURE MAKER
+========================= */
+function makeTexture(colors) {
+  const c = document.createElement("canvas");
+  c.width = c.height = 16;
+  const ctx = c.getContext("2d");
+
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)];
+      ctx.fillRect(x, y, 1, 1);
+    }
+  }
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  return tex;
+}
+
+/* =========================
+   BLOCK MATERIALS
+========================= */
+const grassTop = makeTexture(["#3fa34d", "#2e7d32"]);
+const grassSide = makeTexture(["#7a5a2e", "#3fa34d"]);
+const dirt = makeTexture(["#7a5a2e", "#6b4f28"]);
+const stone = makeTexture(["#888888", "#777777"]);
+
+const grassMaterial = [
+  new THREE.MeshLambertMaterial({ map: grassSide }),
+  new THREE.MeshLambertMaterial({ map: grassSide }),
+  new THREE.MeshLambertMaterial({ map: grassTop }),
+  new THREE.MeshLambertMaterial({ map: dirt }),
+  new THREE.MeshLambertMaterial({ map: grassSide }),
+  new THREE.MeshLambertMaterial({ map: grassSide })
+];
+
+const stoneMaterial = new THREE.MeshLambertMaterial({ map: stone });
+
+/* =========================
+   WORLD GENERATION
+========================= */
+const blocks = [];
+const box = new THREE.BoxGeometry(1, 1, 1);
+
+for (let x = -20; x < 20; x++) {
+  for (let z = -20; z < 20; z++) {
+    const grass = new THREE.Mesh(box, grassMaterial);
+    grass.position.set(x, 0, z);
+    scene.add(grass);
+    blocks.push(grass);
+
+    for (let y = -1; y > -4; y--) {
+      const s = new THREE.Mesh(box, stoneMaterial);
+      s.position.set(x, y, z);
+      scene.add(s);
+      blocks.push(s);
+    }
+  }
+}
+
+/* =========================
+   FIRST‑PERSON CONTROLS
+========================= */
+camera.position.set(0, 2, 5);
+
+let pitch = 0, yaw = 0;
+const keys = {};
+let sprint = false;
+
+document.addEventListener("keydown", e => {
+  keys[e.code] = true;
+  if (e.code === "ShiftLeft") sprint = true;
+});
+document.addEventListener("keyup", e => {
+  keys[e.code] = false;
+  if (e.code === "ShiftLeft") sprint = false;
+});
+
+document.body.addEventListener("click", () => {
+  document.body.requestPointerLock();
+});
+
+document.addEventListener("mousemove", e => {
+  if (document.pointerLockElement !== document.body) return;
+  yaw -= e.movementX * 0.002;
+  pitch -= e.movementY * 0.002;
+  pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
+});
+
+/* =========================
+   GAME LOOP
+========================= */
+function animate() {
+  requestAnimationFrame(animate);
+
+  camera.rotation.set(pitch, yaw, 0);
+
+  const speed = sprint ? 0.15 : 0.08;
+  const forward = new THREE.Vector3(
+    -Math.sin(yaw), 0, -Math.cos(yaw)
+  ).normalize();
+  const right = new THREE.Vector3(
+    Math.cos(yaw), 0, -Math.sin(yaw)
+  ).normalize();
+
+  if (keys["KeyW"]) camera.position.addScaledVector(forward, speed);
+  if (keys["KeyS"]) camera.position.addScaledVector(forward, -speed);
+  if (keys["KeyA"]) camera.position.addScaledVector(right, -speed);
+  if (keys["KeyD"]) camera.position.addScaledVector(right, speed);
+
+  renderer.render(scene, camera);
+}
+
+animate();
+
+window.addEventListener("resize", () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>
