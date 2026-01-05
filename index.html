@@ -250,6 +250,33 @@ window.addEventListener("resize", () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+ // =========================
+// UI SETUP (PHASE 2A)
+// =========================
+const healthEl = document.getElementById("health");
+const hungerEl = document.getElementById("hunger");
+
+let health = 10;
+let hunger = 10;
+
+function drawUI() {
+  healthEl.innerHTML = "";
+  hungerEl.innerHTML = "";
+
+  for (let i = 0; i < health; i++) {
+    const h = document.createElement("div");
+    h.className = "heart";
+    healthEl.appendChild(h);
+  }
+
+  for (let i = 0; i < hunger; i++) {
+    const f = document.createElement("div");
+    f.className = "food";
+    hungerEl.appendChild(f);
+  }
+}
+
+drawUI();
 });
 </script>
 </body>
