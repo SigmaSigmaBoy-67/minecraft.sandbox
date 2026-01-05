@@ -3,64 +3,81 @@
 <head>
 <meta charset="UTF-8" />
 <title>Minecraft‑Style 3D</title>
-  <style>
-#ui {
-  position: fixed;
-  bottom: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  text-align: center;
-  pointer-events: none;
-  font-family: monospace;
-}
+ <style>
+  /* ===== GLOBAL ===== */
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: #87ceeb;
+  }
 
-#hotbar {
-  display: flex;
-  gap: 4px;
-  justify-content: center;
-  margin-top: 6px;
-}
+  canvas {
+    image-rendering: pixelated;
+  }
 
-.slot {
-  width: 40px;
-  height: 40px;
-  background: #777;
-  border: 3px solid #333;
-}
-
-.slot.selected {
-  border-color: white;
-}
-
-#health, #hunger {
-  display: flex;
-  justify-content: center;
-  gap: 4px;
-  margin-bottom: 4px;
-}
-
-.heart, .food {
-  width: 20px;
-  height: 20px;
-  background: red;
-}
-
-.food {
-  background: orange;
-}
-
-  body { margin: 0; overflow: hidden; background: #87ceeb; }
-  canvas { image-rendering: pixelated; }
   #crosshair {
     position: fixed;
-    top: 50%; left: 50%;
-    width: 10px; height: 10px;
-    margin-left: -5px; margin-top: -5px;
+    top: 50%;
+    left: 50%;
+    width: 10px;
+    height: 10px;
+    margin-left: -5px;
+    margin-top: -5px;
     border: 2px solid white;
     box-sizing: border-box;
     pointer-events: none;
   }
+
+  /* ===== UI ===== */
+  #ui {
+    position: fixed;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    pointer-events: none;
+    font-family: monospace;
+  }
+
+  #health, #hunger {
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+    margin-bottom: 4px;
+  }
+
+  .heart, .food {
+    width: 20px;
+    height: 20px;
+  }
+
+  .heart {
+    background: red;
+  }
+
+  .food {
+    background: orange;
+  }
+
+  #hotbar {
+    display: flex;
+    gap: 4px;
+    justify-content: center;
+    margin-top: 6px;
+  }
+
+  .slot {
+    width: 40px;
+    height: 40px;
+    background: #777;
+    border: 3px solid #333;
+  }
+
+  .slot.selected {
+    border-color: white;
+  }
 </style>
+
 </head>
 <body>
 <div id="ui">
