@@ -295,7 +295,11 @@ camera.rotation.x = pitch;
   if (keys["KeyA"]) camera.position.addScaledVector(right, -speed);
   if (keys["KeyD"]) camera.position.addScaledVector(right, speed);
 
- velocityY += GRAVITY;
+ if (!onGround) {
+  velocityY += GRAVITY;
+} else {
+  velocityY = Math.max(velocityY, 0);
+}
 camera.position.y += velocityY;
 
 
@@ -303,7 +307,7 @@ camera.position.y += velocityY;
 downRay.set(
   new THREE.Vector3(
     camera.position.x,
-    camera.position.y - 0.1,
+    camera.position.y - 1,
     camera.position.z
   ),
   new THREE.Vector3(0, -1, 0)
@@ -311,9 +315,20 @@ downRay.set(
 
 const groundHits = downRay.intersectObjects(blocks);
 
+if (groundHits.length > 0 && groundHits[0].distance < 1.7) {
+  camera.position.y = groundHits[0].point.y + 1.62;
+  velocityY = 0;
+  onGround = true;
+} else {
+  onGround = false;
+}
+
+
+const groundHits = downRay.intersectObjects(blocks);
+
 if (groundHits.length > 0 && groundHits[0].distance < 1.01) {
   velocityY = Math.max(velocityY, 0);
-  camera.position.y = groundHits[0].point.y + 1;
+  camera.position.y = groundHits[0].point.y + 1.62;
   onGround = true;
 } else {
   onGround = false;
