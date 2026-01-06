@@ -2,75 +2,47 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Minecraft‑Style 3D</title>
- <style>
+<title>Minecraft-Style 3D</title>
+<style>
   /* ===== GLOBAL ===== */
-  body {
-    margin: 0;
-    overflow: hidden;
-    background: #87ceeb;
-  }
-  canvas {
-    image-rendering: pixelated;
-  }
+  body { margin: 0; overflow: hidden; background: #87ceeb; }
+  canvas { image-rendering: pixelated; }
+  
+  /* ===== CROSSHAIR ===== */
   #crosshair {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    width: 10px;
-    height: 10px;
-    margin-left: -5px;
-    margin-top: -5px;
-    border: 2px solid white;
-    box-sizing: border-box;
+    position: fixed; top: 50%; left: 50%;
+    width: 10px; height: 10px;
+    margin-left: -5px; margin-top: -5px;
+    border: 2px solid white; box-sizing: border-box;
     pointer-events: none;
   }
+
   /* ===== UI ===== */
   #ui {
-    position: fixed;
-    bottom: 10px;
-    left: 50%;
+    position: fixed; bottom: 10px; left: 50%;
     transform: translateX(-50%);
-    text-align: center;
-    pointer-events: none;
+    text-align: center; pointer-events: none;
     font-family: monospace;
   }
   #health, #hunger {
-    display: flex;
-    justify-content: center;
-    gap: 4px;
-    margin-bottom: 4px;
+    display: flex; justify-content: center; gap: 4px; margin-bottom: 4px;
   }
-.heart, .food {
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
-}
-.heart {
-  background: linear-gradient(#ff4d4d, #b30000);
-}
-.food {
-  background: linear-gradient(#ffb347, #ff7a00);
-}
+  .heart, .food { width: 18px; height: 18px; border-radius: 4px; }
+  .heart { background: linear-gradient(#ff4d4d, #b30000); }
+  .food { background: linear-gradient(#ffb347, #ff7a00); }
+  
   #hotbar {
-    display: flex;
-    gap: 4px;
-    justify-content: center;
-    margin-top: 6px;
+    display: flex; gap: 4px; justify-content: center; margin-top: 6px;
   }
   .slot {
-    width: 40px;
-    height: 40px;
-    background: #777;
-    border: 3px solid #333;
+    width: 40px; height: 40px; background: #777; border: 3px solid #333;
   }
-  .slot.selected {
-    border-color: white;
-  }
+  .slot.selected { border-color: white; }
 </style>
 </head>
 <body>
- <div id="crosshair"></div>
+
+<div id="crosshair"></div>
 <div id="ui">
   <div id="health"></div>
   <div id="hunger"></div>
@@ -80,57 +52,59 @@
     <div class="slot"></div>
     <div class="slot"></div>
     <div class="slot"></div>
-    <div class="slot"></div>
-    <div class="slot"></div>
-    <div class="slot"></div>
-    <div class="slot"></div>
   </div>
 </div>
+
 <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+
 <script>
 /* =========================
    SCENE + CAMERA
 ========================= */
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
-const camera = new THREE.PerspectiveCamera(
-  75,
-  window.innerWidth / window.innerHeight,
-  0.1,
-  1000
-);
 
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 camera.position.set(0, 2, 5);
- 
-/* =========================
-   PLAYER STATE (REQUIRED)
-========================= */
-let yaw = 0;
-let pitch = 0;
-
-const keys = {};
-let sprint = false;
-
-let velocityY = 0;
-let onGround = false;
-
-const GRAVITY = -0.01;
-const JUMP_FORCE = 0.25;
-
-const PLAYER_HEIGHT = 1.8;
-const PLAYER_RADIUS = 0.35;
+camera.rotation.order = "YXZ"; // Important for FPS look controls
 
 const renderer = new THREE.WebGLRenderer({ antialias: false });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(1);
- 
 document.body.appendChild(renderer.domElement);
- document.addEventListener("keydown", e => {
+
+/* =========================
+   PLAYER STATE
+========================= */
+let yaw = 0;
+let pitch = 0;
+const keys = {};
+let sprint = false;
+let velocityY = 0;
+let onGround = false;
+
+const GRAVITY = -0.015;
+const JUMP_FORCE = 0.25;
+const PLAYER_HEIGHT = 1.8;
+const PLAYER_RADIUS = 0.35;
+
+/* =========================
+   INPUTS
+========================= */
+document.addEventListener("keydown", e => {
   keys[e.code] = true;
   if (e.code === "ShiftLeft") sprint = true;
   if (e.code === "Space" && onGround) {
     velocityY = JUMP_FORCE;
     onGround = false;
+  }
+  // Hotbar selection
+  if (e.code.startsWith("Digit")) {
+    const num = parseInt(e.code.replace("Digit", ""));
+    if (num >= 1 && num <= 5) { // Assuming 5 slots for now
+      selectedSlot = num - 1;
+      drawUI();
+    }
   }
 });
 
@@ -139,17 +113,26 @@ document.addEventListener("keyup", e => {
   if (e.code === "ShiftLeft") sprint = false;
 });
 
- 
+// Pointer Lock (Click to play)
+document.body.addEventListener("click", () => {
+  document.body.requestPointerLock();
+});
+
+document.addEventListener("mousemove", e => {
+  if (document.pointerLockElement !== document.body) return;
+  yaw -= e.movementX * 0.002;
+  pitch -= e.movementY * 0.002;
+  pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
+});
+
 /* =========================
-   LIGHTING
+   LIGHTING & TEXTURES
 ========================= */
-scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-const sun = new THREE.DirectionalLight(0xffffff, 0.6);
+scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+const sun = new THREE.DirectionalLight(0xffffff, 0.7);
 sun.position.set(50, 100, 50);
 scene.add(sun);
-/* =========================
-   PIXEL TEXTURE MAKER
-========================= */
+
 function makeTexture(colors) {
   const c = document.createElement("canvas");
   c.width = c.height = 16;
@@ -165,13 +148,12 @@ function makeTexture(colors) {
   tex.minFilter = THREE.NearestFilter;
   return tex;
 }
-/* =========================
-   BLOCK MATERIALS
-========================= */
+
 const grassTop = makeTexture(["#3fa34d", "#2e7d32"]);
 const grassSide = makeTexture(["#7a5a2e", "#3fa34d"]);
 const dirt = makeTexture(["#7a5a2e", "#6b4f28"]);
 const stone = makeTexture(["#888888", "#777777"]);
+
 const grassMaterial = [
   new THREE.MeshLambertMaterial({ map: grassSide }),
   new THREE.MeshLambertMaterial({ map: grassSide }),
@@ -181,184 +163,178 @@ const grassMaterial = [
   new THREE.MeshLambertMaterial({ map: grassSide })
 ];
 const stoneMaterial = new THREE.MeshLambertMaterial({ map: stone });
+
 /* =========================
    WORLD GENERATION
 ========================= */
 const blocks = [];
-const raycaster = new THREE.Raycaster();
-const downRay = new THREE.Raycaster();
-downRay.far = 2.1; // player height + small buffer
-let heldItem = null;
-const HOLD_DISTANCE = 1.5;
- 
-const mouse = new THREE.Vector2(0, 0); // center of screen
-raycaster.far = 6; // interaction distance (Minecraft-style reach)
-const droppedItems = [];
-const drops = [];
-const box = new THREE.BoxGeometry(1, 1, 1);
-for (let x = -20; x < 20; x++) {
-  for (let z = -20; z < 20; z++) {
-    const grass = new THREE.Mesh(box, grassMaterial);
+const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
+
+// Generate a flat world
+for (let x = -10; x < 10; x++) {
+  for (let z = -10; z < 10; z++) {
+    // Grass Top
+    const grass = new THREE.Mesh(boxGeometry, grassMaterial);
     grass.position.set(x, 0, z);
     scene.add(grass);
     blocks.push(grass);
+
+    // Stone Layers Below
     for (let y = -1; y > -4; y--) {
-      const s = new THREE.Mesh(box, stoneMaterial);
+      const s = new THREE.Mesh(boxGeometry, stoneMaterial);
       s.position.set(x, y, z);
       scene.add(s);
       blocks.push(s);
     }
   }
 }
-document.addEventListener("mousemove", e => {
-  if (document.pointerLockElement !== document.body) return;
-  yaw -= e.movementX * 0.002;
-  pitch -= e.movementY * 0.002;
-  pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
-});
-document.body.addEventListener("click", () => {
-  document.body.requestPointerLock();
-});
+
+/* =========================
+   INTERACTION (BREAK/PLACE)
+========================= */
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2(0, 0); // Center
+let heldItem = null;
+const droppedItems = [];
 
 document.addEventListener("mousedown", e => {
+  if (document.pointerLockElement !== document.body) return;
   if (e.button !== 0) return; // Only Left Click
 
-  // 1. If holding an item, place/drop it
+  // 1. If holding an item, we are "placing" it (simple implementation)
   if (heldItem) {
-    // Basic logic: just put it back in the scene where the camera is
-    // (You might want to improve this later to place against other blocks)
+    // For now, just drop it back into the scene
     scene.add(heldItem);
     heldItem = null;
     return;
   }
 
-  // 2. If hands empty, Break Block
+  // 2. If hands empty, Raycast to Break Block
   raycaster.setFromCamera(mouse, camera);
   const hits = raycaster.intersectObjects(blocks);
+
+  if (hits.length === 0) return;
+
+  const hitObject = hits[0].object;
   
-  if (hits.length === 0) return; // Clicked air
-  
-  const hit = hits[0].object; // The block we hit
-  
-  // --- CREATE THE MINI DROP ITEM ---
-  const drop = hit.clone();
+  // Create a "Drop" item (Mini block)
+  const drop = hitObject.clone();
   drop.scale.set(0.4, 0.4, 0.4);
-  drop.position.copy(hit.position);
-  drop.position.y += 0.5; // Pop it up slightly
-  drop.userData = {
-    isDrop: true,
-    velocityY: 0.2 // Give it a little pop up jump
-  };
+  drop.position.copy(hitObject.position);
+  drop.position.y += 0.5;
+  drop.userData = { isDrop: true, velocityY: 0.2 }; // Pop up
+  
   droppedItems.push(drop);
   scene.add(drop);
 
-  // --- REMOVE THE BIG BLOCK ---
-  scene.remove(hit);
-  const i = blocks.indexOf(hit);
-  if (i !== -1) blocks.splice(i, 1);
-  
-  // Note: I removed "heldItem = hit" because usually in MC 
-  // you break the block, it drops, and THEN you pick it up by walking over it.
+  // Remove the actual block
+  scene.remove(hitObject);
+  const index = blocks.indexOf(hitObject);
+  if (index !== -1) blocks.splice(index, 1);
 });
-});
+
 /* =========================
    GAME LOOP
 ========================= */
+const downRay = new THREE.Raycaster();
+
 function animate() {
   requestAnimationFrame(animate);
-console.log("frame");
-camera.rotation.order = "YXZ";
-camera.rotation.y = yaw;
-camera.rotation.x = pitch;
+
+  // 1. Camera Rotation
+  camera.rotation.y = yaw;
+  camera.rotation.x = pitch;
+
+  // 2. Movement Logic
   const speed = sprint ? 0.15 : 0.08;
-  const forward = new THREE.Vector3(
-    -Math.sin(yaw), 0, -Math.cos(yaw)
-  ).normalize();
-  const right = new THREE.Vector3(
-    Math.cos(yaw), 0, -Math.sin(yaw)
-  ).normalize();
- const moveDir = new THREE.Vector3();
-if (keys["KeyW"]) moveDir.add(forward);
-if (keys["KeyS"]) moveDir.sub(forward);
-if (keys["KeyA"]) moveDir.sub(right);
-if (keys["KeyD"]) moveDir.add(right);
-if (moveDir.length() > 0) {
-  moveDir.normalize();
-  // ray origin = chest height (not feet)
-  const origin = new THREE.Vector3(
-    camera.position.x,
-    camera.position.y - PLAYER_HEIGHT / 2,
-    camera.position.z
-  );
-  const moveRay = new THREE.Raycaster(
-    origin,
-    moveDir,
-    0,
-    PLAYER_RADIUS + speed
-  );
-  const hits = moveRay.intersectObjects(blocks);
-  // only move if no block in the way
-  if (hits.length === 0) {
-    camera.position.addScaledVector(moveDir, speed);
+  const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)).normalize();
+  const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)).normalize();
+  const moveDir = new THREE.Vector3();
+
+  if (keys["KeyW"]) moveDir.add(forward);
+  if (keys["KeyS"]) moveDir.sub(forward);
+  if (keys["KeyA"]) moveDir.sub(right);
+  if (keys["KeyD"]) moveDir.add(right);
+
+  // Simple Collision (Horizontal)
+  if (moveDir.length() > 0) {
+    moveDir.normalize();
+    const origin = camera.position.clone();
+    origin.y -= PLAYER_HEIGHT / 2; // Ray from chest level
+    
+    const moveRay = new THREE.Raycaster(origin, moveDir, 0, PLAYER_RADIUS + speed);
+    const hits = moveRay.intersectObjects(blocks);
+    
+    if (hits.length === 0) {
+      camera.position.addScaledVector(moveDir, speed);
+    }
   }
-}
- if (!onGround) {
-  velocityY += GRAVITY;
-} else {
-  velocityY = Math.max(velocityY, 0);
-}
-camera.position.y += velocityY;
-downRay.set(
-  camera.position,
-  new THREE.Vector3(0, -1, 0)
-);
-const groundHits = downRay.intersectObjects(blocks);
-if (groundHits.length > 0) {
-  const hit = groundHits[0];
-  const feetY = camera.position.y - PLAYER_HEIGHT;
-  if (feetY <= hit.point.y + 0.05 && velocityY <= 0) {
-    camera.position.y = hit.point.y + PLAYER_HEIGHT;
-    velocityY = 0;
-    onGround = true;
+
+  // 3. Gravity / Jumping
+  if (!onGround) {
+    velocityY += GRAVITY;
+  }
+  camera.position.y += velocityY;
+
+  // Ground Detection
+  downRay.set(camera.position, new THREE.Vector3(0, -1, 0));
+  const groundHits = downRay.intersectObjects(blocks);
+  
+  // Height check
+  if (groundHits.length > 0) {
+    const hit = groundHits[0];
+    if (hit.distance < PLAYER_HEIGHT && velocityY <= 0) {
+      camera.position.y = hit.point.y + PLAYER_HEIGHT;
+      velocityY = 0;
+      onGround = true;
+    } else {
+      onGround = false;
+    }
   } else {
     onGround = false;
   }
-} else {
-  onGround = false;
-}
-// ===== PICKUP DROPS =====
-for (let i = droppedItems.length - 1; i >= 0; i--) {
-  const item = droppedItems[i];
-  // gravity
-  item.userData.velocityY += GRAVITY;
-  item.position.y += item.userData.velocityY;
-  // ground collision (rest on block)
-  if (item.position.y <= Math.round(item.position.y)) {
-    item.position.y = Math.round(item.position.y);
-    item.userData.velocityY = 0;
+
+  // 4. Handle Dropped Items (Spinning & Pickup)
+  for (let i = droppedItems.length - 1; i >= 0; i--) {
+    const item = droppedItems[i];
+    
+    // Simple Gravity for item
+    item.userData.velocityY += GRAVITY;
+    item.position.y += item.userData.velocityY;
+
+    // Floor collision for item (simple math floor)
+    if (item.position.y < Math.round(item.position.y)) {
+      item.position.y = Math.round(item.position.y);
+      item.userData.velocityY = 0;
+    }
+
+    item.rotation.y += 0.02;
+
+    // Pickup distance
+    if (camera.position.distanceTo(item.position) < 1.5) {
+      scene.remove(item);
+      droppedItems.splice(i, 1);
+      // Logic to add to inventory would go here
+      console.log("Picked up block!");
+    }
   }
-  // floating spin
-  item.rotation.y += 0.02;
-  // pickup
-  if (camera.position.distanceTo(item.position) < 1.2) {
-    scene.remove(item);
-    droppedItems.splice(i, 1);
-    console.log("Picked up block");
+
+  // 5. Holding Item Visuals
+  if (heldItem) {
+    const dir = new THREE.Vector3();
+    camera.getWorldDirection(dir);
+    heldItem.position.copy(camera.position).addScaledVector(dir, 1.5);
+    heldItem.rotation.set(0, yaw, 0);
   }
-}
- if (heldItem) {
-  const dir = new THREE.Vector3();
-  camera.getWorldDirection(dir);
-  heldItem.position.copy(camera.position)
-    .addScaledVector(dir, HOLD_DISTANCE);
-  heldItem.rotation.set(0, yaw, 0);
-  scene.add(heldItem);
-}
+
   renderer.render(scene, camera);
 }
+
+// Start the loop
 animate();
+
 /* =========================
-   UI SETUP (PHASE 2A)
+   UI LOGIC
 ========================= */
 const healthEl = document.getElementById("health");
 const hungerEl = document.getElementById("hunger");
@@ -366,6 +342,7 @@ const hotbarSlots = document.querySelectorAll(".slot");
 let health = 10;
 let hunger = 10;
 let selectedSlot = 0;
+
 function drawUI() {
   healthEl.innerHTML = "";
   hungerEl.innerHTML = "";
@@ -383,16 +360,383 @@ function drawUI() {
     slot.classList.toggle("selected", i === selectedSlot);
   });
 }
+
+// Initial Draw
 drawUI();
+
+window.addEventListener("resize", () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html><!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Minecraft-Style 3D</title>
+<style>
+  /* ===== GLOBAL ===== */
+  body { margin: 0; overflow: hidden; background: #87ceeb; }
+  canvas { image-rendering: pixelated; }
+  
+  /* ===== CROSSHAIR ===== */
+  #crosshair {
+    position: fixed; top: 50%; left: 50%;
+    width: 10px; height: 10px;
+    margin-left: -5px; margin-top: -5px;
+    border: 2px solid white; box-sizing: border-box;
+    pointer-events: none;
+  }
+
+  /* ===== UI ===== */
+  #ui {
+    position: fixed; bottom: 10px; left: 50%;
+    transform: translateX(-50%);
+    text-align: center; pointer-events: none;
+    font-family: monospace;
+  }
+  #health, #hunger {
+    display: flex; justify-content: center; gap: 4px; margin-bottom: 4px;
+  }
+  .heart, .food { width: 18px; height: 18px; border-radius: 4px; }
+  .heart { background: linear-gradient(#ff4d4d, #b30000); }
+  .food { background: linear-gradient(#ffb347, #ff7a00); }
+  
+  #hotbar {
+    display: flex; gap: 4px; justify-content: center; margin-top: 6px;
+  }
+  .slot {
+    width: 40px; height: 40px; background: #777; border: 3px solid #333;
+  }
+  .slot.selected { border-color: white; }
+</style>
+</head>
+<body>
+
+<div id="crosshair"></div>
+<div id="ui">
+  <div id="health"></div>
+  <div id="hunger"></div>
+  <div id="hotbar">
+    <div class="slot selected"></div>
+    <div class="slot"></div>
+    <div class="slot"></div>
+    <div class="slot"></div>
+    <div class="slot"></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+
+<script>
+/* =========================
+   SCENE + CAMERA
+========================= */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
+
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+camera.position.set(0, 2, 5);
+camera.rotation.order = "YXZ"; // Important for FPS look controls
+
+const renderer = new THREE.WebGLRenderer({ antialias: false });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(1);
+document.body.appendChild(renderer.domElement);
+
+/* =========================
+   PLAYER STATE
+========================= */
+let yaw = 0;
+let pitch = 0;
+const keys = {};
+let sprint = false;
+let velocityY = 0;
+let onGround = false;
+
+const GRAVITY = -0.015;
+const JUMP_FORCE = 0.25;
+const PLAYER_HEIGHT = 1.8;
+const PLAYER_RADIUS = 0.35;
+
+/* =========================
+   INPUTS
+========================= */
 document.addEventListener("keydown", e => {
+  keys[e.code] = true;
+  if (e.code === "ShiftLeft") sprint = true;
+  if (e.code === "Space" && onGround) {
+    velocityY = JUMP_FORCE;
+    onGround = false;
+  }
+  // Hotbar selection
   if (e.code.startsWith("Digit")) {
     const num = parseInt(e.code.replace("Digit", ""));
-    if (num >= 1 && num <= 9) {
+    if (num >= 1 && num <= 5) { // Assuming 5 slots for now
       selectedSlot = num - 1;
       drawUI();
     }
   }
 });
+
+document.addEventListener("keyup", e => {
+  keys[e.code] = false;
+  if (e.code === "ShiftLeft") sprint = false;
+});
+
+// Pointer Lock (Click to play)
+document.body.addEventListener("click", () => {
+  document.body.requestPointerLock();
+});
+
+document.addEventListener("mousemove", e => {
+  if (document.pointerLockElement !== document.body) return;
+  yaw -= e.movementX * 0.002;
+  pitch -= e.movementY * 0.002;
+  pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
+});
+
+/* =========================
+   LIGHTING & TEXTURES
+========================= */
+scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+const sun = new THREE.DirectionalLight(0xffffff, 0.7);
+sun.position.set(50, 100, 50);
+scene.add(sun);
+
+function makeTexture(colors) {
+  const c = document.createElement("canvas");
+  c.width = c.height = 16;
+  const ctx = c.getContext("2d");
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)];
+      ctx.fillRect(x, y, 1, 1);
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  return tex;
+}
+
+const grassTop = makeTexture(["#3fa34d", "#2e7d32"]);
+const grassSide = makeTexture(["#7a5a2e", "#3fa34d"]);
+const dirt = makeTexture(["#7a5a2e", "#6b4f28"]);
+const stone = makeTexture(["#888888", "#777777"]);
+
+const grassMaterial = [
+  new THREE.MeshLambertMaterial({ map: grassSide }),
+  new THREE.MeshLambertMaterial({ map: grassSide }),
+  new THREE.MeshLambertMaterial({ map: grassTop }),
+  new THREE.MeshLambertMaterial({ map: dirt }),
+  new THREE.MeshLambertMaterial({ map: grassSide }),
+  new THREE.MeshLambertMaterial({ map: grassSide })
+];
+const stoneMaterial = new THREE.MeshLambertMaterial({ map: stone });
+
+/* =========================
+   WORLD GENERATION
+========================= */
+const blocks = [];
+const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
+
+// Generate a flat world
+for (let x = -10; x < 10; x++) {
+  for (let z = -10; z < 10; z++) {
+    // Grass Top
+    const grass = new THREE.Mesh(boxGeometry, grassMaterial);
+    grass.position.set(x, 0, z);
+    scene.add(grass);
+    blocks.push(grass);
+
+    // Stone Layers Below
+    for (let y = -1; y > -4; y--) {
+      const s = new THREE.Mesh(boxGeometry, stoneMaterial);
+      s.position.set(x, y, z);
+      scene.add(s);
+      blocks.push(s);
+    }
+  }
+}
+
+/* =========================
+   INTERACTION (BREAK/PLACE)
+========================= */
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2(0, 0); // Center
+let heldItem = null;
+const droppedItems = [];
+
+document.addEventListener("mousedown", e => {
+  if (document.pointerLockElement !== document.body) return;
+  if (e.button !== 0) return; // Only Left Click
+
+  // 1. If holding an item, we are "placing" it (simple implementation)
+  if (heldItem) {
+    // For now, just drop it back into the scene
+    scene.add(heldItem);
+    heldItem = null;
+    return;
+  }
+
+  // 2. If hands empty, Raycast to Break Block
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(blocks);
+
+  if (hits.length === 0) return;
+
+  const hitObject = hits[0].object;
+  
+  // Create a "Drop" item (Mini block)
+  const drop = hitObject.clone();
+  drop.scale.set(0.4, 0.4, 0.4);
+  drop.position.copy(hitObject.position);
+  drop.position.y += 0.5;
+  drop.userData = { isDrop: true, velocityY: 0.2 }; // Pop up
+  
+  droppedItems.push(drop);
+  scene.add(drop);
+
+  // Remove the actual block
+  scene.remove(hitObject);
+  const index = blocks.indexOf(hitObject);
+  if (index !== -1) blocks.splice(index, 1);
+});
+
+/* =========================
+   GAME LOOP
+========================= */
+const downRay = new THREE.Raycaster();
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  // 1. Camera Rotation
+  camera.rotation.y = yaw;
+  camera.rotation.x = pitch;
+
+  // 2. Movement Logic
+  const speed = sprint ? 0.15 : 0.08;
+  const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)).normalize();
+  const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)).normalize();
+  const moveDir = new THREE.Vector3();
+
+  if (keys["KeyW"]) moveDir.add(forward);
+  if (keys["KeyS"]) moveDir.sub(forward);
+  if (keys["KeyA"]) moveDir.sub(right);
+  if (keys["KeyD"]) moveDir.add(right);
+
+  // Simple Collision (Horizontal)
+  if (moveDir.length() > 0) {
+    moveDir.normalize();
+    const origin = camera.position.clone();
+    origin.y -= PLAYER_HEIGHT / 2; // Ray from chest level
+    
+    const moveRay = new THREE.Raycaster(origin, moveDir, 0, PLAYER_RADIUS + speed);
+    const hits = moveRay.intersectObjects(blocks);
+    
+    if (hits.length === 0) {
+      camera.position.addScaledVector(moveDir, speed);
+    }
+  }
+
+  // 3. Gravity / Jumping
+  if (!onGround) {
+    velocityY += GRAVITY;
+  }
+  camera.position.y += velocityY;
+
+  // Ground Detection
+  downRay.set(camera.position, new THREE.Vector3(0, -1, 0));
+  const groundHits = downRay.intersectObjects(blocks);
+  
+  // Height check
+  if (groundHits.length > 0) {
+    const hit = groundHits[0];
+    if (hit.distance < PLAYER_HEIGHT && velocityY <= 0) {
+      camera.position.y = hit.point.y + PLAYER_HEIGHT;
+      velocityY = 0;
+      onGround = true;
+    } else {
+      onGround = false;
+    }
+  } else {
+    onGround = false;
+  }
+
+  // 4. Handle Dropped Items (Spinning & Pickup)
+  for (let i = droppedItems.length - 1; i >= 0; i--) {
+    const item = droppedItems[i];
+    
+    // Simple Gravity for item
+    item.userData.velocityY += GRAVITY;
+    item.position.y += item.userData.velocityY;
+
+    // Floor collision for item (simple math floor)
+    if (item.position.y < Math.round(item.position.y)) {
+      item.position.y = Math.round(item.position.y);
+      item.userData.velocityY = 0;
+    }
+
+    item.rotation.y += 0.02;
+
+    // Pickup distance
+    if (camera.position.distanceTo(item.position) < 1.5) {
+      scene.remove(item);
+      droppedItems.splice(i, 1);
+      // Logic to add to inventory would go here
+      console.log("Picked up block!");
+    }
+  }
+
+  // 5. Holding Item Visuals
+  if (heldItem) {
+    const dir = new THREE.Vector3();
+    camera.getWorldDirection(dir);
+    heldItem.position.copy(camera.position).addScaledVector(dir, 1.5);
+    heldItem.rotation.set(0, yaw, 0);
+  }
+
+  renderer.render(scene, camera);
+}
+
+// Start the loop
+animate();
+
+/* =========================
+   UI LOGIC
+========================= */
+const healthEl = document.getElementById("health");
+const hungerEl = document.getElementById("hunger");
+const hotbarSlots = document.querySelectorAll(".slot");
+let health = 10;
+let hunger = 10;
+let selectedSlot = 0;
+
+function drawUI() {
+  healthEl.innerHTML = "";
+  hungerEl.innerHTML = "";
+  for (let i = 0; i < health; i++) {
+    const h = document.createElement("div");
+    h.className = "heart";
+    healthEl.appendChild(h);
+  }
+  for (let i = 0; i < hunger; i++) {
+    const f = document.createElement("div");
+    f.className = "food";
+    hungerEl.appendChild(f);
+  }
+  hotbarSlots.forEach((slot, i) => {
+    slot.classList.toggle("selected", i === selectedSlot);
+  });
+}
+
+// Initial Draw
+drawUI();
+
 window.addEventListener("resize", () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
