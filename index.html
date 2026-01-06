@@ -220,22 +220,23 @@ if (!Number.isFinite(camera.position.y)) {
   camera.position.set(0, 3, 5);
   velocityY = 0;
 }
-
 document.addEventListener("keydown", e => {
   keys[e.code] = true;
 
   if (e.code === "ShiftLeft") sprint = true;
 
- if (e.code === "Space" && onGround) {
-  velocityY = JUMP_FORCE;
-  onGround = false;
-}
-
+  if (e.code === "Space" && onGround) {
+    velocityY = JUMP_FORCE;
+    onGround = false;
+  }
+});
 
 document.addEventListener("keyup", e => {
   keys[e.code] = false;
+
   if (e.code === "ShiftLeft") sprint = false;
 });
+
 
 document.body.addEventListener("click", () => {
   document.body.requestPointerLock();
