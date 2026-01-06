@@ -214,6 +214,8 @@ let velocityY = 0;
 let onGround = false;
 const GRAVITY = -0.01;
 const JUMP_FORCE = 0.25;
+const PLAYER_HEIGHT = 1.8;
+const PLAYER_RADIUS = 0.35;
 
 document.addEventListener("keydown", e => {
   keys[e.code] = true;
@@ -290,10 +292,37 @@ camera.rotation.x = pitch;
     Math.cos(yaw), 0, -Math.sin(yaw)
   ).normalize();
 
-  if (keys["KeyW"]) camera.position.addScaledVector(forward, speed);
-  if (keys["KeyS"]) camera.position.addScaledVector(forward, -speed);
-  if (keys["KeyA"]) camera.position.addScaledVector(right, -speed);
-  if (keys["KeyD"]) camera.position.addScaledVector(right, speed);
+ const moveDir = new THREE.Vector3();
+
+if (keys["KeyW"]) moveDir.add(forward);
+if (keys["KeyS"]) moveDir.sub(forward);
+if (keys["KeyA"]) moveDir.sub(right);
+if (keys["KeyD"]) moveDir.add(right);
+
+if (moveDir.length() > 0) {
+  moveDir.normalize();
+
+  // ray origin = chest height (not feet)
+  const origin = new THREE.Vector3(
+    camera.position.x,
+    camera.position.y - PLAYER_HEIGHT / 2,
+    camera.position.z
+  );
+
+  const moveRay = new THREE.Raycaster(
+    origin,
+    moveDir,
+    0,
+    PLAYER_RADIUS + speed
+  );
+
+  const hits = moveRay.intersectObjects(blocks);
+
+  // only move if no block in the way
+  if (hits.length === 0) {
+    camera.position.addScaledVector(moveDir, speed);
+  }
+}
 
  if (!onGround) {
   velocityY += GRAVITY;
