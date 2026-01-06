@@ -226,11 +226,11 @@ document.addEventListener("keydown", e => {
 
   if (e.code === "ShiftLeft") sprint = true;
 
-  if (e.code === "Space" && onGround) {
-    velocityY = JUMP_FORCE;
-    onGround = false;
-  }
-});
+ if (e.code === "Space" && onGround) {
+  velocityY = JUMP_FORCE;
+  onGround = false;
+}
+
 
 document.addEventListener("keyup", e => {
   keys[e.code] = false;
@@ -364,15 +364,6 @@ if (groundHits.length > 0) {
   onGround = false;
 }
 
-
-
-if (groundHits.length > 0 && groundHits[0].distance < 1.01) {
-  velocityY = Math.max(velocityY, 0);
-  camera.position.y = groundHits[0].point.y + 1.62;
-  onGround = true;
-} else {
-  onGround = false;
-}
 
 // ===== PICKUP DROPS =====
 for (let i = droppedItems.length - 1; i >= 0; i--) {
