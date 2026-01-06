@@ -173,9 +173,11 @@ const stoneMaterial = new THREE.MeshLambertMaterial({ map: stone });
    WORLD GENERATION
 ========================= */
 const blocks = [];
- // ===== RAYCASTING =====
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2(0, 0); // center of screen
+raycaster.far = 6; // interaction distance (Minecraft-style reach)
+
+const drops = [];
 
 const box = new THREE.BoxGeometry(1, 1, 1);
 
@@ -241,7 +243,7 @@ document.addEventListener("mousedown", e => {
   if (e.button !== 0) return; // left click only
 
   raycaster.setFromCamera(mouse, camera);
-  const hits = raycaster.intersectObjects(blocks);
+  
 
   if (hits.length === 0) return;
 
@@ -257,9 +259,13 @@ document.addEventListener("mousedown", e => {
   drop.position.copy(hitBlock.position);
   drop.position.y += 0.7;
 
-  drop.userData.isDrop = true;
-  droppedItems.push(drop);
-  scene.add(drop);
+drop.userData = {
+  isDrop: true,
+  velocityY: 0
+};
+droppedItems.push(drop);
+scene.add(drop);
+
 });
 
 /* =========================
@@ -289,22 +295,55 @@ camera.rotation.x = pitch;
 velocityY += GRAVITY;
 camera.position.y += velocityY;
 
-// Ground collision
-if (camera.position.y <= 2) {
+// simple ground collision
+if (camera.position.y < 2) {
   camera.position.y = 2;
   velocityY = 0;
   onGround = true;
+} else {
+  onGround = false;
 }
+
 // ===== PICKUP DROPS =====
 for (let i = droppedItems.length - 1; i >= 0; i--) {
   const item = droppedItems[i];
 
-  // floating animation
-  item.rotation.y += 0.02;
-  item.position.y += Math.sin(Date.now() * 0.003) * 0.0005;
+  // gravity
+  item.userData.velocityY += GRAVITY;
+  item.position.y += item.userData.velocityY;
 
-  // pickup distance check
-  if (camera.position.distanceTo(item.position) < 1) {
+  // ground collision (rest on block)
+  if (item.position.y <= Math.round(item.position.y)) {
+    item.position.y = Math.round(item.position.y);
+    item.userData.velocityY = 0;
+  }
+
+  // floating spin
+  item.rotation.y += 0.02;
+
+  // pickup
+  if (camera.position.distanceTo(item.position) < 1.2) {
+    scene.remove(item);
+    droppedItems.splice(i, 1);
+    console.log("Picked up block");
+  }
+}
+
+  // gravity for drops
+  item.userData.velocityY += GRAVITY * 0.5;
+  item.position.y += item.userData.velocityY;
+
+  // land on ground
+  if (item.position.y < 1.3) {
+    item.position.y = 1.3;
+    item.userData.velocityY = 0;
+  }
+
+  // floating spin
+  item.rotation.y += 0.03;
+
+  // pickup check
+  if (camera.position.distanceTo(item.position) < 1.2) {
     scene.remove(item);
     droppedItems.splice(i, 1);
     console.log("Picked up block");
