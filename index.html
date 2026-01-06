@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Minecraft Phase 3: Deep World & Flight</title>
+<title>Minecraft Phase 4: Ores & Icons</title>
 <style>
   body { margin: 0; overflow: hidden; background: #87ceeb; font-family: monospace; user-select: none; }
   
@@ -20,7 +20,6 @@
     text-align: center; pointer-events: none;
   }
 
-  /* FLIGHT INDICATOR */
   #fly-mode {
     position: fixed; top: 10px; left: 10px;
     color: yellow; font-weight: bold; font-size: 18px;
@@ -29,60 +28,57 @@
 
   #hotbar {
     display: flex; gap: 4px; justify-content: center; margin-top: 6px;
+    background: rgba(0,0,0,0.2); padding: 5px; border-radius: 5px;
   }
   
   .slot {
-    width: 50px; height: 50px; background: rgba(0,0,0,0.5); 
-    border: 3px solid #333;
+    width: 44px; height: 44px; background: #8b8b8b; 
+    border: 3px solid #373737;
+    border-top: 3px solid #FFF; border-left: 3px solid #FFF; /* 3D bevel effect */
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     position: relative;
   }
-  .slot.selected { border-color: white; background: rgba(0,0,0,0.2); }
+  .slot.selected { background: #bbb; border-color: white; }
   
-  .icon { width: 24px; height: 24px; border: 1px solid #000; margin-bottom: 2px; box-shadow: 2px 2px 0 rgba(0,0,0,0.5); }
+  /* The Icon Image */
+  .slot-icon {
+    width: 32px; height: 32px;
+    image-rendering: pixelated;
+  }
   
-  .tool-pick { background: linear-gradient(135deg, #eee 50%, #8b4513 50%); }
-  .tool-axe  { background: linear-gradient(135deg, #8b4513 30%, #eee 30%); }
-  .tool-shovel { background: linear-gradient(to bottom, #eee 40%, #8b4513 40%); }
-
-  .count { font-size: 14px; color: white; text-shadow: 1px 1px 0 #000; }
-  .key-bind { position: absolute; top: 2px; left: 2px; font-size: 10px; color: #ccc; }
+  .count {
+    position: absolute; bottom: 2px; right: 2px;
+    font-size: 14px; color: white; text-shadow: 2px 2px 0 #000;
+  }
+  .key-bind {
+    position: absolute; top: 2px; left: 2px; font-size: 10px; color: #444; font-weight: bold;
+  }
 </style>
 </head>
 <body>
 
 <div id="crosshair"></div>
-<div id="fly-mode">FLYING MODE ENABLED</div>
+<div id="fly-mode">CREATIVE MODE (FLYING)</div>
 
 <div id="ui">
   <div id="hotbar">
-    <div class="slot selected" id="slot-0"><span class="key-bind">1</span><div class="icon" style="background:#2e7d32"></div><span class="count">0</span></div>
-    <div class="slot" id="slot-1"><span class="key-bind">2</span><div class="icon" style="background:#777"></div><span class="count">0</span></div>
-    <div class="slot" id="slot-2"><span class="key-bind">3</span><div class="icon" style="background:#5c4033"></div><span class="count">0</span></div>
-    <div class="slot" id="slot-3"><span class="key-bind">4</span><div class="icon" style="background:#4caf50"></div><span class="count">0</span></div>
-    <div style="width: 10px;"></div>
-    <div class="slot" id="slot-4"><span class="key-bind">5</span><div class="icon tool-pick"></div></div>
-    <div class="slot" id="slot-5"><span class="key-bind">6</span><div class="icon tool-axe"></div></div>
-    <div class="slot" id="slot-6"><span class="key-bind">7</span><div class="icon tool-shovel"></div></div>
-  </div>
+    </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
 
 <script>
-// --- PHYSICS TUNING 2.0 (SNAPPY) ---
+// --- PHYSICS CONFIG ---
 const SPEED_WALK = 0.14;   
 const SPEED_SPRINT = 0.24; 
-const SPEED_FLY = 0.35;    // Flying is fast
+const SPEED_FLY = 0.40;    
+const JUMP_FORCE = 0.27;   
+const GRAVITY = 0.022;     
 
-// To make jumping "lower and faster", we increase gravity AND lower jump force slightly
-const JUMP_FORCE = 0.27;   // Lower (was 0.32)
-const GRAVITY = 0.022;     // Much heavier (was 0.016)
-
-// --- SCENE SETUP ---
+// --- SCENE ---
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
-scene.fog = new THREE.Fog(0x87ceeb, 10, 25);
+scene.fog = new THREE.Fog(0x87ceeb, 10, 30); // Slightly further fog
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 camera.position.set(0, 5, 10);
@@ -93,226 +89,360 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(1);
 document.body.appendChild(renderer.domElement);
 
-// --- TEXTURES ---
-function makeTexture(colors) {
-  const c = document.createElement("canvas");
-  c.width = c.height = 16;
-  const ctx = c.getContext("2d");
-  for (let y = 0; y < 16; y++) {
-    for (let x = 0; x < 16; x++) {
-      ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)];
-      ctx.fillRect(x, y, 1, 1);
-    }
-  }
-  const tex = new THREE.CanvasTexture(c);
+// --- TEXTURE PAINTER ---
+// This system generates textures and converts them to Images for the UI
+
+const textureCanvas = document.createElement("canvas");
+textureCanvas.width = 16; textureCanvas.height = 16;
+const ctx = textureCanvas.getContext("2d");
+
+function createTexture(drawFn) {
+  // clear
+  ctx.clearRect(0,0,16,16);
+  // draw
+  drawFn(ctx);
+  // Create 3D texture
+  const tex = new THREE.CanvasTexture(textureCanvas);
   tex.magFilter = THREE.NearestFilter;
   tex.minFilter = THREE.NearestFilter;
   tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
+  // Create 2D UI Image URL (Snapshot)
+  const dataUrl = textureCanvas.toDataURL();
+  
+  // Clone canvas for unique texture reference to avoid overwrite issues
+  const copy = document.createElement("canvas");
+  copy.width=16; copy.height=16;
+  copy.getContext("2d").drawImage(textureCanvas,0,0);
+  const distinctTex = new THREE.CanvasTexture(copy);
+  distinctTex.magFilter = THREE.NearestFilter;
+  distinctTex.colorSpace = THREE.SRGBColorSpace;
+
+  return { tex: distinctTex, icon: dataUrl };
 }
 
-const texGrassTop = makeTexture(["#3fa34d", "#2e7d32", "#3fa34d"]);
-const texGrassSide = makeTexture(["#7a5a2e", "#6b4f28", "#7a5a2e", "#3fa34d"]);
-const texDirt = makeTexture(["#7a5a2e", "#6b4f28"]);
-const texStone = makeTexture(["#888888", "#777777", "#999999"]);
-const texWoodSide = makeTexture(["#5c4033", "#4e342e", "#3e2723"]);
-const texWoodTop = makeTexture(["#8d6e63", "#795548"]);
-const texLeaves = makeTexture(["#4caf50", "#388e3c", "#66bb6a"]);
-const texBedrock = makeTexture(["#222", "#333", "#111", "#000"]); // Dark, messy texture
+// Helper: Fill with noise
+function fillNoise(ctx, colors) {
+  for(let y=0; y<16; y++) {
+    for(let x=0; x<16; x++) {
+      ctx.fillStyle = colors[Math.floor(Math.random()*colors.length)];
+      ctx.fillRect(x,y,1,1);
+    }
+  }
+}
 
-const materials = [
-  // 0: GRASS
-  [
-    new THREE.MeshLambertMaterial({ map: texGrassSide }), 
-    new THREE.MeshLambertMaterial({ map: texGrassSide }), 
-    new THREE.MeshLambertMaterial({ map: texGrassTop }),  
-    new THREE.MeshLambertMaterial({ map: texDirt }),      
-    new THREE.MeshLambertMaterial({ map: texGrassSide }), 
-    new THREE.MeshLambertMaterial({ map: texGrassSide })  
-  ],
-  // 1: STONE
-  new THREE.MeshLambertMaterial({ map: texStone }),
-  // 2: WOOD
-  [
-    new THREE.MeshLambertMaterial({ map: texWoodSide }), 
-    new THREE.MeshLambertMaterial({ map: texWoodSide }), 
-    new THREE.MeshLambertMaterial({ map: texWoodTop }),  
-    new THREE.MeshLambertMaterial({ map: texWoodTop }),  
-    new THREE.MeshLambertMaterial({ map: texWoodSide }), 
-    new THREE.MeshLambertMaterial({ map: texWoodSide })  
-  ],
-  // 3: LEAVES
-  new THREE.MeshLambertMaterial({ map: texLeaves }),
-  // 4: BEDROCK
-  new THREE.MeshLambertMaterial({ map: texBedrock })
+// Helper: Draw Tool Pixel Art
+function drawPixels(ctx, map, palette) {
+  for(let y=0; y<16; y++) {
+    for(let x=0; x<16; x++) {
+      const char = map[y][x];
+      if (char !== " ") {
+        ctx.fillStyle = palette[char];
+        ctx.fillRect(x,y,1,1);
+      }
+    }
+  }
+}
+
+// --- DEFINE BLOCKS & ICONS ---
+
+// 1. GRASS
+const tGrassTop = createTexture(c => fillNoise(c, ["#4caf50", "#388e3c"]));
+const tGrassSide = createTexture(c => {
+  fillNoise(c, ["#795548", "#5d4037"]); // dirt
+  c.fillStyle = "#4caf50"; c.fillRect(0,0,16,4); // grass top strip
+});
+const tDirt = createTexture(c => fillNoise(c, ["#795548", "#5d4037"]));
+
+// 2. STONE
+const tStone = createTexture(c => fillNoise(c, ["#9e9e9e", "#757575", "#616161"]));
+
+// 3. WOOD
+const tWood = createTexture(c => {
+  fillNoise(c, ["#5d4037", "#4e342e"]);
+  c.fillStyle = "#3e2723"; // Bark lines
+  c.fillRect(4,0,2,16); c.fillRect(10,0,2,16);
+});
+
+// 4. LEAVES
+const tLeaves = createTexture(c => fillNoise(c, ["#2e7d32", "#1b5e20", "#4caf50"]));
+
+// 5. IRON ORE
+const tIron = createTexture(c => {
+  fillNoise(c, ["#9e9e9e", "#757575"]); // Stone base
+  // Add ore specks
+  c.fillStyle = "#d7ccc8"; 
+  for(let i=0; i<8; i++) c.fillRect(Math.random()*14+1, Math.random()*14+1, 2, 2);
+});
+
+// 6. DIAMOND ORE
+const tDiamond = createTexture(c => {
+  fillNoise(c, ["#9e9e9e", "#757575"]); // Stone base
+  c.fillStyle = "#00bcd4"; // Cyan
+  for(let i=0; i<6; i++) c.fillRect(Math.random()*14+1, Math.random()*14+1, 2, 2);
+});
+
+// 7. BEDROCK
+const tBedrock = createTexture(c => fillNoise(c, ["#000", "#222", "#111"]));
+
+// --- TOOLS (Pixel Art Maps) ---
+const pickMap = [
+  "   BBBB         ", "   B  B         ", "   B  B         ", "    SS          ",
+  "    SS          ", "    SS          ", "    SS          ", "    SS          ",
+  "    SS          ", "    SS          ", "    SS          ", "    SS          ",
+  "    SS          ", "    SS          ", "    SS          ", "    SS          "
+];
+const axeMap = [
+  "   BB           ", "  BBBB          ", "  BBBB          ", "   BSS          ",
+  "    SS          ", "    SS          ", "    SS          ", "    SS          ",
+  "    SS          ", "    SS          ", "    SS          ", "    SS          ",
+  "    SS          ", "    SS          ", "    SS          ", "    SS          "
+];
+const shovelMap = [
+  "    B           ", "   BBB          ", "   BBB          ", "    S           ",
+  "    S           ", "    S           ", "    S           ", "    S           ",
+  "    S           ", "    S           ", "    S           ", "    S           ",
+  "    S           ", "    S           ", "    S           ", "    S           "
 ];
 
-const BLOCK_HP = { 0: 2, 1: 3, 2: 3, 3: 1, 4: 999999 }; // Bedrock is unbreakable
+// Generate Tool Icons
+const tPickaxe = createTexture(c => drawPixels(c, pickMap, {B:"#555", S:"#8d6e63"}));
+const tAxe = createTexture(c => drawPixels(c, axeMap, {B:"#555", S:"#8d6e63"}));
+const tShovel = createTexture(c => drawPixels(c, shovelMap, {B:"#555", S:"#8d6e63"}));
 
-// --- GAME VARIABLES ---
-let yaw = 0;
-let pitch = 0;
+
+// --- INVENTORY DEFINITION ---
+// type: 0=Block, 1=Tool
+// id: Block ID or Tool logic
+const INV_DATA = [
+  { name: "Grass",   type: 0, blockId: 0, icon: tGrassSide.icon },
+  { name: "Stone",   type: 0, blockId: 1, icon: tStone.icon },
+  { name: "Wood",    type: 0, blockId: 2, icon: tWood.icon },
+  { name: "Leaves",  type: 0, blockId: 3, icon: tLeaves.icon },
+  { name: "Iron",    type: 0, blockId: 5, icon: tIron.icon },    // New
+  { name: "Diamond", type: 0, blockId: 6, icon: tDiamond.icon }, // New
+  { name: "Pickaxe", type: 1, toolId: "pick", icon: tPickaxe.icon },
+  { name: "Axe",     type: 1, toolId: "axe", icon: tAxe.icon },
+  { name: "Shovel",  type: 1, toolId: "shovel", icon: tShovel.icon },
+];
+
+// Current counts (start with tools, 0 blocks)
+const inventoryCounts = [0, 0, 0, 0, 0, 0, 1, 1, 1]; 
+let selectedSlot = 0;
+
+// --- BUILD HOTBAR ---
+const hotbarEl = document.getElementById("hotbar");
+INV_DATA.forEach((item, i) => {
+  const div = document.createElement("div");
+  div.className = "slot";
+  if(i===0) div.classList.add("selected");
+  div.id = `slot-${i}`;
+  div.innerHTML = `
+    <span class="key-bind">${i+1}</span>
+    <img src="${item.icon}" class="slot-icon">
+    ${item.type === 0 ? `<span class="count">0</span>` : ''}
+  `;
+  hotbarEl.appendChild(div);
+});
+
+// --- MATERIALS ARRAY ---
+// 0:Grass, 1:Stone, 2:Wood, 3:Leaves, 4:Bedrock, 5:Iron, 6:Diamond
+const materials = [
+  // 0
+  [ new THREE.MeshLambertMaterial({ map: tGrassSide.tex }), new THREE.MeshLambertMaterial({ map: tGrassSide.tex }), new THREE.MeshLambertMaterial({ map: tGrassTop.tex }), new THREE.MeshLambertMaterial({ map: tDirt.tex }), new THREE.MeshLambertMaterial({ map: tGrassSide.tex }), new THREE.MeshLambertMaterial({ map: tGrassSide.tex }) ],
+  // 1
+  new THREE.MeshLambertMaterial({ map: tStone.tex }),
+  // 2
+  new THREE.MeshLambertMaterial({ map: tWood.tex }),
+  // 3
+  new THREE.MeshLambertMaterial({ map: tLeaves.tex }),
+  // 4
+  new THREE.MeshLambertMaterial({ map: tBedrock.tex }),
+  // 5 (Iron)
+  new THREE.MeshLambertMaterial({ map: tIron.tex }),
+  // 6 (Diamond)
+  new THREE.MeshLambertMaterial({ map: tDiamond.tex })
+];
+
+// HP Values
+const BLOCK_HP = { 0: 2, 1: 3, 2: 3, 3: 1, 4: 99999, 5: 5, 6: 8 }; // Diamond is hard!
+
+// --- GAME STATE ---
 const keys = {};
 let velocityY = 0;
 let onGround = false;
 let sprint = false;
-let flying = false; // Flight toggle
+let flying = false;
+let yaw = 0; let pitch = 0;
 
-let targetFov = 75;
+const blocks = [];
+const droppedItems = [];
+const boxGeo = new THREE.BoxGeometry(1,1,1);
 
-const inventory = [0, 0, 0, 0, 1, 1, 1]; 
-let selectedSlot = 0; 
-const blocks = [];       
-const droppedItems = []; 
-const boxGeo = new THREE.BoxGeometry(1, 1, 1);
-
-// --- INPUTS ---
-document.addEventListener("keydown", e => {
-  keys[e.code] = true;
-  if (e.code === "ShiftLeft") sprint = true;
-  
-  // Jump logic (only if not flying)
-  if (e.code === "Space" && onGround && !flying) {
-    velocityY = JUMP_FORCE; 
-    onGround = false;
-  }
-  
-  // Toggle Flight (Key: F)
-  if (e.code === "KeyF") {
-    flying = !flying;
-    velocityY = 0;
-    document.getElementById("fly-mode").style.display = flying ? "block" : "none";
-  }
-
-  // Hotbar
-  if (e.key >= "1" && e.key <= "7") {
-    selectedSlot = parseInt(e.key) - 1;
-    updateUI();
-  }
-});
-
-document.addEventListener("keyup", e => {
-  keys[e.code] = false;
-  if (e.code === "ShiftLeft") sprint = false;
-});
-
-document.body.addEventListener("click", () => document.body.requestPointerLock());
-window.addEventListener('contextmenu', e => e.preventDefault());
-
-document.addEventListener("mousemove", e => {
-  if (document.pointerLockElement === document.body) {
-    yaw -= e.movementX * 0.002;
-    pitch -= e.movementY * 0.002;
-    pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
-  }
-});
-
-// --- LIGHTING ---
-scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-const sun = new THREE.DirectionalLight(0xffffff, 0.8);
-sun.position.set(50, 100, 50);
-scene.add(sun);
-
-// --- WORLD GEN ---
+// --- WORLD GENERATION ---
 function createBlock(x, y, z, type) {
   const mat = materials[type];
-  let finalMat;
-  if (Array.isArray(mat)) finalMat = mat.map(m => m.clone());
-  else finalMat = mat.clone();
-
+  let finalMat = Array.isArray(mat) ? mat.map(m=>m.clone()) : mat.clone();
+  
   const mesh = new THREE.Mesh(boxGeo, finalMat);
   mesh.position.set(x, y, z);
-  mesh.userData = { type: type, hp: BLOCK_HP[type] || 1 }; 
+  mesh.userData = { type: type, hp: BLOCK_HP[type] || 1 };
   scene.add(mesh);
   blocks.push(mesh);
   return mesh;
 }
 
 function createTree(x, z) {
-  const height = 3 + Math.floor(Math.random() * 2);
-  for (let y = 1; y <= height; y++) createBlock(x, y, z, 2);
-  for (let lx = x - 2; lx <= x + 2; lx++) {
-    for (let lz = z - 2; lz <= z + 2; lz++) {
-      for (let ly = height; ly <= height + 1; ly++) {
-        if (Math.abs(lx - x) + Math.abs(lz - z) <= 2) {
-           if (!(lx === x && lz === z && ly === height)) createBlock(lx, ly, lz, 3);
-        }
-      }
+  const h = 4 + Math.floor(Math.random()*2);
+  for(let y=1; y<=h; y++) createBlock(x,y,z, 2);
+  for(let lx=x-2; lx<=x+2; lx++){
+    for(let lz=z-2; lz<=z+2; lz++){
+       if(lx!==x || lz!==z) createBlock(lx, h, lz, 3);
+       if((lx!==x || lz!==z) && Math.random()>0.5) createBlock(lx, h+1, lz, 3);
     }
   }
-  createBlock(x, height + 2, z, 3);
+  createBlock(x, h+2, z, 3);
 }
 
-const worldSize = 12; 
+const worldSize = 12;
+const depth = 16; // Deeper world!
+
 for (let x = -worldSize; x < worldSize; x++) {
   for (let z = -worldSize; z < worldSize; z++) {
-    createBlock(x, 0, z, 0); // Grass
-    for (let y = -1; y > -5; y--) createBlock(x, y, z, 1); // Stone
-    createBlock(x, -5, z, 4); // BEDROCK at bottom
-    if (Math.random() < 0.025 && (Math.abs(x) > 3 || Math.abs(z) > 3)) createTree(x, z);
+    createBlock(x, 0, z, 0); // Top Grass
+    
+    // Dirt layer
+    createBlock(x, -1, z, 1); 
+
+    // Deep Stone/Ore Generation
+    for(let y = -2; y > -depth; y--) {
+      const rng = Math.random();
+      let type = 1; // Default stone
+      
+      // Ore Logic
+      if (y < -4) {
+        if (rng < 0.008) type = 6; // Diamond (Rare, < 1%)
+        else if (rng < 0.08) type = 5; // Iron (~8%)
+      }
+      createBlock(x, y, z, type);
+    }
+    
+    // Bedrock Floor
+    createBlock(x, -depth, z, 4); 
+
+    // Trees
+    if (Math.random() < 0.02 && (Math.abs(x)>2 || Math.abs(z)>2)) createTree(x,z);
   }
 }
+
+// --- LIGHTS ---
+scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+const sun = new THREE.DirectionalLight(0xffffff, 0.7);
+sun.position.set(20, 50, 20);
+scene.add(sun);
+
+// --- INPUTS ---
+document.addEventListener("keydown", e => {
+  keys[e.code] = true;
+  if(e.code === "ShiftLeft") sprint = true;
+  if(e.code === "KeyF") {
+    flying = !flying;
+    velocityY = 0;
+    document.getElementById("fly-mode").style.display = flying ? "block" : "none";
+  }
+  if(e.code === "Space" && onGround && !flying) {
+    velocityY = JUMP_FORCE; onGround = false;
+  }
+  // Hotbar 1-9
+  if(e.key >= "1" && e.key <= "9") {
+    const idx = parseInt(e.key)-1;
+    if(idx < INV_DATA.length) {
+      selectedSlot = idx;
+      updateUI();
+    }
+  }
+});
+
+document.addEventListener("keyup", e => {
+  keys[e.code] = false;
+  if(e.code === "ShiftLeft") sprint = false;
+});
+
+document.body.addEventListener("click", () => document.body.requestPointerLock());
+window.addEventListener('contextmenu', e => e.preventDefault());
+document.addEventListener("mousemove", e => {
+  if (document.pointerLockElement === document.body) {
+    yaw -= e.movementX * 0.002;
+    pitch -= e.movementY * 0.002;
+    pitch = Math.max(-1.5, Math.min(1.5, pitch));
+  }
+});
 
 // --- INTERACTION ---
 const raycaster = new THREE.Raycaster();
-const mouse = new THREE.Vector2(0, 0);
+const mouse = new THREE.Vector2(0,0);
 
-function flashBlock(block) {
-  const mats = Array.isArray(block.material) ? block.material : [block.material];
-  mats.forEach(m => m.emissive.setHex(0xff0000));
-  setTimeout(() => {
-    mats.forEach(m => m.emissive.setHex(0x000000));
-  }, 100);
+function flashBlock(b) {
+  const ms = Array.isArray(b.material) ? b.material : [b.material];
+  ms.forEach(m => m.emissive.setHex(0x550000));
+  setTimeout(()=> ms.forEach(m => m.emissive.setHex(0)), 100);
 }
 
 document.addEventListener("mousedown", e => {
-  if (document.pointerLockElement !== document.body) return;
+  if(document.pointerLockElement !== document.body) return;
   raycaster.setFromCamera(mouse, camera);
   const hits = raycaster.intersectObjects(blocks);
-  if (hits.length === 0) return;
-
+  if(hits.length===0) return;
   const hit = hits[0];
-  const hitBlock = hit.object;
-  const blockType = hitBlock.userData.type;
-  
-  // Bedrock Check
-  if (blockType === 4) return; // Cannot interact with bedrock
+  const b = hit.object;
+  const type = b.userData.type;
 
   // MINE
-  if (e.button === 0) {
-    let damage = 1; 
-    if (selectedSlot === 4 && blockType === 1) damage = 10; 
-    if (selectedSlot === 5 && blockType === 2) damage = 10; 
-    if (selectedSlot === 6 && (blockType === 0 || blockType === 3)) damage = 10; 
-
-    // Creative mode = instant mine? Optional, but let's keep HP for now so you can use tools
-    if (flying) damage = 100; // Super strength when flying
-
-    hitBlock.userData.hp -= damage;
-    flashBlock(hitBlock);
-
-    if (hitBlock.userData.hp <= 0) {
-      const drop = new THREE.Mesh(boxGeo, hitBlock.material); 
-      drop.scale.set(0.25, 0.25, 0.25);
-      drop.position.copy(hitBlock.position);
-      drop.userData = { isDrop: true, velocityY: 0.3, type: blockType };
-      droppedItems.push(drop);
-      scene.add(drop);
-      scene.remove(hitBlock);
-      blocks.splice(blocks.indexOf(hitBlock), 1);
+  if(e.button === 0) {
+    let damage = 1;
+    
+    // Creative/Flying Instant Break
+    if (flying) {
+      damage = 999999; 
+    } else {
+      // Survival Tool Logic
+      const item = INV_DATA[selectedSlot];
+      if (item.type === 1) { // If tool
+        if (item.toolId==="pick" && (type===1||type===5||type===6)) damage = 10;
+        if (item.toolId==="axe" && (type===2)) damage = 10;
+        if (item.toolId==="shovel" && (type===0)) damage = 10;
+      }
+      if (type === 4) return; // Cannot break bedrock in survival
     }
-  } 
+
+    b.userData.hp -= damage;
+    flashBlock(b);
+
+    if (b.userData.hp <= 0) {
+      // Drop item
+      if (type !== 4) { // Bedrock doesn't drop
+        const drop = new THREE.Mesh(boxGeo, b.material);
+        drop.scale.set(0.3,0.3,0.3);
+        drop.position.copy(b.position);
+        drop.userData = { isDrop:true, velY: 0.2, type: type };
+        droppedItems.push(drop);
+        scene.add(drop);
+      }
+      scene.remove(b);
+      blocks.splice(blocks.indexOf(b), 1);
+    }
+  }
   // PLACE
   else if (e.button === 2) {
-    if (selectedSlot <= 3 && inventory[selectedSlot] > 0) {
-      const newPos = hitBlock.position.clone().add(hit.face.normal);
-      const playerPos = camera.position.clone();
-      playerPos.y -= 1.6;
-      if (newPos.distanceTo(playerPos) < 1.0) return;
-      createBlock(newPos.x, newPos.y, newPos.z, selectedSlot);
-      // If flying, don't use ammo (Creative mode style)
-      if (!flying) {
-        inventory[selectedSlot]--;
+    const item = INV_DATA[selectedSlot];
+    if (item.type === 0 && (flying || inventoryCounts[selectedSlot] > 0)) {
+      const pos = b.position.clone().add(hit.face.normal);
+      // collision check
+      const pPos = camera.position.clone(); pPos.y -= 1.6;
+      if(pos.distanceTo(pPos) < 1.0) return;
+
+      createBlock(pos.x, pos.y, pos.z, item.blockId);
+      if(!flying) {
+        inventoryCounts[selectedSlot]--;
         updateUI();
       }
     }
@@ -320,107 +450,88 @@ document.addEventListener("mousedown", e => {
 });
 
 function updateUI() {
-  const slots = document.querySelectorAll(".slot");
-  slots.forEach((slot, index) => {
-    if (index === selectedSlot) slot.classList.add("selected");
-    else slot.classList.remove("selected");
-    if (index < 4) slot.querySelector(".count").innerText = inventory[index];
+  document.querySelectorAll(".slot").forEach((el, i) => {
+    if(i===selectedSlot) el.classList.add("selected");
+    else el.classList.remove("selected");
+    
+    const countEl = el.querySelector(".count");
+    if(countEl) countEl.innerText = inventoryCounts[i];
   });
 }
 
-// --- ANIMATION LOOP ---
-const downRay = new THREE.Raycaster();
-
+// --- ANIMATION ---
 function animate() {
   requestAnimationFrame(animate);
-
+  
   camera.rotation.y = yaw;
   camera.rotation.x = pitch;
-
-  // PHYSICS: MOVEMENT
+  
   const speed = flying ? SPEED_FLY : (sprint ? SPEED_SPRINT : SPEED_WALK);
   const dir = new THREE.Vector3();
-  const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)).normalize();
-  const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)).normalize();
-
-  if (keys["KeyW"]) dir.add(forward);
-  if (keys["KeyS"]) dir.sub(forward);
-  if (keys["KeyA"]) dir.sub(right);
-  if (keys["KeyD"]) dir.add(right);
-
-  // FLIGHT VERTICAL MOVEMENT
-  if (flying) {
-    if (keys["Space"]) camera.position.y += speed;
-    if (keys["ShiftLeft"]) camera.position.y -= speed;
+  const fwd = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)).normalize();
+  const rgt = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)).normalize();
+  
+  if(keys["KeyW"]) dir.add(fwd);
+  if(keys["KeyS"]) dir.sub(fwd);
+  if(keys["KeyA"]) dir.sub(rgt);
+  if(keys["KeyD"]) dir.add(rgt);
+  
+  if(flying) {
+    if(keys["Space"]) camera.position.y += speed;
+    if(keys["ShiftLeft"]) camera.position.y -= speed;
   }
-
-  // FOV EFFECTS
-  if (sprint && dir.length() > 0 && !flying) targetFov = 85;
-  else if (dir.length() > 0 && !flying) targetFov = 77;
-  else targetFov = 75;
-  camera.fov += (targetFov - camera.fov) * 0.1;
-  camera.updateProjectionMatrix();
-
-  if (dir.length() > 0) {
+  
+  if(dir.length() > 0) {
     dir.normalize();
-    const origin = camera.position.clone();
-    origin.y -= 1.0; 
-    const moveRay = new THREE.Raycaster(origin, dir, 0, 0.5);
-    if (moveRay.intersectObjects(blocks).length === 0) {
-      camera.position.addScaledVector(dir, speed);
-    }
+    const rayOrigin = camera.position.clone(); rayOrigin.y-=1;
+    const moveRay = new THREE.Raycaster(rayOrigin, dir, 0, 0.5);
+    if(moveRay.intersectObjects(blocks).length===0) camera.position.addScaledVector(dir, speed);
   }
-
-  // GRAVITY
-  if (flying) {
-    velocityY = 0; // No gravity when flying
-  } else {
-    // Normal Gravity Logic
-    if (!onGround) velocityY -= GRAVITY; 
+  
+  // Gravity
+  if(!flying) {
+    if(!onGround) velocityY -= GRAVITY;
     camera.position.y += velocityY;
-
-    downRay.set(camera.position, new THREE.Vector3(0, -1, 0));
-    const groundHits = downRay.intersectObjects(blocks);
-    if (groundHits.length > 0) {
-      const hit = groundHits[0];
-      if (hit.distance < 1.8 && velocityY <= 0) {
-        camera.position.y = hit.point.y + 1.8;
-        velocityY = 0;
-        onGround = true;
-      } else {
-        onGround = false;
-      }
-    } else {
-      onGround = false;
-    }
-  }
-
-  // Fall off world check (Respawn or bounce if flight off)
-  if (camera.position.y < -20 && !flying) {
-    camera.position.set(0, 10, 0);
-    velocityY = 0;
-  }
-
-  // DROPS
-  for (let i = droppedItems.length - 1; i >= 0; i--) {
-    const item = droppedItems[i];
-    item.userData.velocityY -= GRAVITY;
-    item.position.y += item.userData.velocityY;
     
-    if (item.position.y < Math.floor(item.position.y) + 0.5) {
-       item.position.y = Math.floor(item.position.y) + 0.5;
-       item.userData.velocityY = 0;
+    const downRay = new THREE.Raycaster(camera.position, new THREE.Vector3(0,-1,0), 0, 1.8);
+    const hits = downRay.intersectObjects(blocks);
+    if(hits.length>0 && velocityY<=0) {
+      camera.position.y = hits[0].point.y + 1.8;
+      velocityY=0; onGround=true;
+    } else {
+      onGround=false;
     }
-    item.rotation.y += 0.05;
+  }
+  
+  if(camera.position.y < -30 && !flying) { camera.position.set(0,10,0); velocityY=0; }
 
-    if (camera.position.distanceTo(item.position) < 1.5) {
-      const type = item.userData.type;
-      if (type <= 3) { 
-        inventory[type]++;
+  // Drops
+  for(let i=droppedItems.length-1; i>=0; i--) {
+    const d = droppedItems[i];
+    d.userData.velY -= GRAVITY;
+    d.position.y += d.userData.velY;
+    
+    // Simple floor collision
+    if(d.position.y < Math.floor(d.position.y)+0.5) {
+       d.position.y = Math.floor(d.position.y)+0.5;
+       d.userData.velY = 0;
+    }
+    d.rotation.y += 0.05;
+    
+    if(d.position.distanceTo(camera.position) < 1.5) {
+      // Find which slot matches this block type
+      const type = d.userData.type;
+      // map block type to inventory slot index
+      // Grass=0, Stone=1, Wood=2, Leaves=3, Iron=4, Diamond=5
+      let slotIdx = -1;
+      INV_DATA.forEach((item, idx) => { if(item.blockId === type) slotIdx = idx; });
+      
+      if(slotIdx > -1) {
+        inventoryCounts[slotIdx]++;
         updateUI();
       }
-      scene.remove(item);
-      droppedItems.splice(i, 1);
+      scene.remove(d);
+      droppedItems.splice(i,1);
     }
   }
 
@@ -431,7 +542,7 @@ updateUI();
 animate();
 
 window.addEventListener("resize", () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.aspect = window.innerWidth/window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
