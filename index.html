@@ -176,7 +176,10 @@ const blocks = [];
 const raycaster = new THREE.Raycaster();
 const downRay = new THREE.Raycaster();
 downRay.far = 2.1; // player height + small buffer
+let heldItem = null;
+const HOLD_DISTANCE = 1.5;
 
+ 
 const mouse = new THREE.Vector2(0, 0); // center of screen
 raycaster.far = 6; // interaction distance (Minecraft-style reach)
 const droppedItems = [];
@@ -252,6 +255,28 @@ document.addEventListener("mousemove", e => {
 
 document.addEventListener("mousedown", e => {
   if (e.button !== 0) return;
+
+  // DROP if holding something
+  if (heldItem) {
+    heldItem = null;
+    return;
+  }
+
+  // PICK UP
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(blocks);
+
+  if (hits.length === 0) return;
+
+  const hit = hits[0].object;
+
+  // remove from world
+  scene.remove(hit);
+  const i = blocks.indexOf(hit);
+  if (i !== -1) blocks.splice(i, 1);
+
+  heldItem = hit;
+});
 
   raycaster.setFromCamera(mouse, camera);
   const hits = raycaster.intersectObjects(blocks); 
@@ -386,18 +411,15 @@ for (let i = droppedItems.length - 1; i >= 0; i--) {
     console.log("Picked up block");
   }
 }
-// ===== PICKUP DROPS =====
-for (let i = droppedItems.length - 1; i >= 0; i--) {
-  const item = droppedItems[i];
+ if (heldItem) {
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
 
-  // pickup distance (Minecraft-like)
-  if (camera.position.distanceTo(item.position) < 1.3) {
-    scene.remove(item);
-    droppedItems.splice(i, 1);
+  heldItem.position.copy(camera.position)
+    .addScaledVector(dir, HOLD_DISTANCE);
 
-    // later this is where inventory logic goes
-    console.log("Picked up block");
-  }
+  heldItem.rotation.set(0, yaw, 0);
+  scene.add(heldItem);
 }
 
   renderer.render(scene, camera);
