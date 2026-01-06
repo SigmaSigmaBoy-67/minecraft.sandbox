@@ -4,36 +4,55 @@
 <meta charset="UTF-8" />
 <title>Minecraft-Style 3D</title>
 <style>
-  body { margin: 0; overflow: hidden; background: #87ceeb; }
+  body { margin: 0; overflow: hidden; background: #87ceeb; font-family: monospace; }
+  
+  /* CROSSHAIR */
   #crosshair {
     position: fixed; top: 50%; left: 50%;
     width: 10px; height: 10px;
     margin-left: -5px; margin-top: -5px;
     border: 2px solid white; box-sizing: border-box;
-    pointer-events: none;
+    pointer-events: none; z-index: 10;
   }
+
+  /* UI CONTAINER */
   #ui {
     position: fixed; bottom: 10px; left: 50%;
     transform: translateX(-50%);
     text-align: center; pointer-events: none;
-    font-family: monospace;
   }
+
+  /* HOTBAR */
   #hotbar {
     display: flex; gap: 4px; justify-content: center; margin-top: 6px;
   }
   .slot {
-    width: 40px; height: 40px; background: #777; border: 3px solid #333;
+    width: 50px; height: 50px; background: rgba(0,0,0,0.5); 
+    border: 3px solid #333;
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-weight: bold; font-size: 14px;
+    position: relative;
   }
   .slot.selected { border-color: white; }
+  
+  /* INVENTORY COUNTER */
+  .count {
+    position: absolute; bottom: 2px; right: 2px; font-size: 10px;
+  }
 </style>
 </head>
 <body>
 
 <div id="crosshair"></div>
+
 <div id="ui">
   <div id="hotbar">
-    <div class="slot selected"></div>
-    <div class="slot"></div>
+    <div class="slot selected" id="slot-grass">
+      <span class="count">0</span>
+    </div>
+    <div class="slot" id="slot-stone">
+      <span class="count">0</span>
+    </div>
     <div class="slot"></div>
     <div class="slot"></div>
     <div class="slot"></div>
@@ -64,12 +83,22 @@ let velocityY = 0;
 let onGround = false;
 let sprint = false;
 
+// --- INVENTORY SYSTEM ---
+const inventory = {
+  grass: 0,
+  stone: 0
+};
+
+// --- LISTS ---
+const blocks = [];       // Physical blocks in the world
+const droppedItems = []; // Floating mini-blocks
+
 // --- INPUTS ---
 document.addEventListener("keydown", e => {
   keys[e.code] = true;
   if (e.code === "ShiftLeft") sprint = true;
   if (e.code === "Space" && onGround) {
-    velocityY = 0.25; // Jump force
+    velocityY = 0.25; 
     onGround = false;
   }
 });
@@ -92,17 +121,16 @@ const sun = new THREE.DirectionalLight(0xffffff, 0.7);
 sun.position.set(50, 100, 50);
 scene.add(sun);
 
+// Helper to make block textures
 function makeColorTex(color) {
   const c = document.createElement("canvas");
   c.width = c.height = 16;
   const ctx = c.getContext("2d");
   ctx.fillStyle = color;
   ctx.fillRect(0,0,16,16);
-  // Add some noise
   ctx.fillStyle = "rgba(0,0,0,0.1)";
   if(Math.random() > 0.5) ctx.fillRect(0,0,8,8);
   if(Math.random() > 0.5) ctx.fillRect(8,8,8,8);
-  
   const tex = new THREE.CanvasTexture(c);
   tex.magFilter = THREE.NearestFilter;
   return tex;
@@ -112,22 +140,22 @@ const matGrass = new THREE.MeshLambertMaterial({ map: makeColorTex("#2e7d32") })
 const matStone = new THREE.MeshLambertMaterial({ map: makeColorTex("#777777") });
 
 // --- WORLD GEN ---
-const blocks = [];
 const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+
+function createBlock(x, y, z, type) {
+  const mat = type === 'grass' ? matGrass : matStone;
+  const mesh = new THREE.Mesh(boxGeo, mat);
+  mesh.position.set(x, y, z);
+  mesh.userData = { type: type }; // IMPORTANT: Store the type so we know what it is!
+  scene.add(mesh);
+  blocks.push(mesh);
+}
 
 for (let x = -10; x < 10; x++) {
   for (let z = -10; z < 10; z++) {
-    // Grass
-    const grass = new THREE.Mesh(boxGeo, matGrass);
-    grass.position.set(x, 0, z);
-    scene.add(grass);
-    blocks.push(grass);
-    // Stone
+    createBlock(x, 0, z, 'grass');
     for (let y = -1; y > -4; y--) {
-      const s = new THREE.Mesh(boxGeo, matStone);
-      s.position.set(x, y, z);
-      scene.add(s);
-      blocks.push(s);
+      createBlock(x, y, z, 'stone');
     }
   }
 }
@@ -137,30 +165,60 @@ const raycaster = new THREE.Raycaster();
 const downRay = new THREE.Raycaster();
 const mouse = new THREE.Vector2(0, 0);
 
-// --- INTERACTION (BREAK BLOCKS) ---
+// --- BREAK BLOCK LOGIC ---
 document.addEventListener("mousedown", e => {
   if (document.pointerLockElement !== document.body) return;
-  if (e.button !== 0) return; // Left click only
+  if (e.button !== 0) return; // Left click
 
   raycaster.setFromCamera(mouse, camera);
   const hits = raycaster.intersectObjects(blocks);
 
   if (hits.length > 0) {
-    const hit = hits[0].object;
-    scene.remove(hit); // Remove from scene
-    blocks.splice(blocks.indexOf(hit), 1); // Remove from physics list
+    const hitBlock = hits[0].object;
+    
+    // 1. CREATE THE DROP
+    const drop = hitBlock.clone();
+    drop.scale.set(0.3, 0.3, 0.3); // Make it small
+    drop.position.copy(hitBlock.position); // Start where block was
+    
+    // Give it physics properties
+    drop.userData = { 
+      isDrop: true, 
+      velocityY: 0.2, // Pop UP
+      type: hitBlock.userData.type // Remember if it is grass or stone
+    };
+    
+    droppedItems.push(drop);
+    scene.add(drop);
+
+    // 2. REMOVE THE BIG BLOCK
+    scene.remove(hitBlock);
+    blocks.splice(blocks.indexOf(hitBlock), 1);
   }
 });
+
+// --- UI UPDATER ---
+function updateHotbar() {
+  // Update Slot 1 (Grass)
+  const grassSlot = document.getElementById('slot-grass');
+  grassSlot.style.backgroundColor = inventory.grass > 0 ? '#2e7d32' : 'rgba(0,0,0,0.5)';
+  grassSlot.querySelector('.count').innerText = inventory.grass;
+
+  // Update Slot 2 (Stone)
+  const stoneSlot = document.getElementById('slot-stone');
+  stoneSlot.style.backgroundColor = inventory.stone > 0 ? '#777777' : 'rgba(0,0,0,0.5)';
+  stoneSlot.querySelector('.count').innerText = inventory.stone;
+}
 
 // --- ANIMATION LOOP ---
 function animate() {
   requestAnimationFrame(animate);
 
-  // Look
+  // 1. Camera Look
   camera.rotation.y = yaw;
   camera.rotation.x = pitch;
 
-  // Move
+  // 2. Movement
   const speed = sprint ? 0.15 : 0.08;
   const dir = new THREE.Vector3();
   const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)).normalize();
@@ -171,7 +229,7 @@ function animate() {
   if (keys["KeyA"]) dir.sub(right);
   if (keys["KeyD"]) dir.add(right);
 
-  // Collision (Wall)
+  // Wall Collision
   if (dir.length() > 0) {
     dir.normalize();
     const origin = camera.position.clone();
@@ -186,7 +244,7 @@ function animate() {
   if (!onGround) velocityY -= 0.01;
   camera.position.y += velocityY;
 
-  // Collision (Ground)
+  // Ground Collision
   downRay.set(camera.position, new THREE.Vector3(0, -1, 0));
   const groundHits = downRay.intersectObjects(blocks);
   if (groundHits.length > 0) {
@@ -200,6 +258,41 @@ function animate() {
     }
   } else {
     onGround = false;
+  }
+
+  // 3. HANDLE DROPS (Floating & Pickup)
+  for (let i = droppedItems.length - 1; i >= 0; i--) {
+    const item = droppedItems[i];
+
+    // Physics for drop
+    item.userData.velocityY -= 0.01; // Gravity
+    item.position.y += item.userData.velocityY;
+
+    // Stop falling if it hits roughly the ground level
+    // (A simple check: if y < nearest whole number)
+    const floorY = Math.floor(item.position.y);
+    if (item.position.y < floorY + 0.5) {
+      item.position.y = floorY + 0.5;
+      item.userData.velocityY = 0;
+    }
+
+    // Spin animation
+    item.rotation.y += 0.05;
+
+    // CHECK FOR PICKUP
+    const distance = camera.position.distanceTo(item.position);
+    if (distance < 1.5) {
+      // Pick it up!
+      const type = item.userData.type;
+      if (inventory[type] !== undefined) {
+        inventory[type]++;
+        updateHotbar();
+      }
+      
+      // Remove from world
+      scene.remove(item);
+      droppedItems.splice(i, 1);
+    }
   }
 
   renderer.render(scene, camera);
