@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Minecraft Phase 5: Infinite World & Saves</title>
+<title>Minecraft Phase 5.5: Stability Fix</title>
 <style>
   body { margin: 0; overflow: hidden; background: #87ceeb; font-family: monospace; user-select: none; }
   
@@ -20,18 +20,12 @@
     text-align: center; pointer-events: none;
   }
 
-  #fly-mode {
+  #overlay-text {
     position: fixed; top: 10px; left: 10px;
-    color: yellow; font-weight: bold; font-size: 18px;
-    text-shadow: 2px 2px 0 #000; display: none;
+    color: white; font-weight: bold; font-size: 16px;
+    text-shadow: 1px 1px 0 #000;
   }
   
-  #save-msg {
-    position: fixed; top: 40px; left: 10px;
-    color: #4caf50; font-weight: bold; font-size: 16px;
-    text-shadow: 1px 1px 0 #000; opacity: 0; transition: opacity 1s;
-  }
-
   #hotbar {
     display: flex; gap: 4px; justify-content: center; margin-top: 6px;
     background: rgba(0,0,0,0.2); padding: 5px; border-radius: 5px;
@@ -54,8 +48,7 @@
 <body>
 
 <div id="crosshair"></div>
-<div id="fly-mode">CREATIVE FLIGHT (ARROWS UP/DOWN)</div>
-<div id="save-msg">GAME SAVED!</div>
+<div id="overlay-text">GENERATING WORLD...</div>
 
 <div id="ui">
   <div id="hotbar"></div>
@@ -65,7 +58,7 @@
 
 <script>
 // --- CONFIGURATION ---
-const RENDER_DISTANCE = 14; // Blocks radius to render around player
+const RENDER_DISTANCE = 8; // Reduced from 14 for stability
 const WORLD_BORDER = 1000;
 const SPEED_WALK = 0.14;   
 const SPEED_SPRINT = 0.24; 
@@ -76,10 +69,9 @@ const GRAVITY = 0.022;
 // --- SCENE SETUP ---
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
-scene.fog = new THREE.Fog(0x87ceeb, 15, 28); // Fog hides chunks loading
+scene.fog = new THREE.Fog(0x87ceeb, 8, 20); // Closer fog for performance
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.set(0, 10, 0); // Start high up
 camera.rotation.order = "YXZ";
 
 const renderer = new THREE.WebGLRenderer({ antialias: false });
@@ -87,7 +79,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(1);
 document.body.appendChild(renderer.domElement);
 
-// --- TEXTURE SYSTEM (SAME AS PHASE 4) ---
+// --- TEXTURE SYSTEM ---
 const textureCanvas = document.createElement("canvas");
 textureCanvas.width = 16; textureCanvas.height = 16;
 const ctx = textureCanvas.getContext("2d");
@@ -196,88 +188,70 @@ let flying = false;
 let yaw = 0; let pitch = 0;
 
 const boxGeo = new THREE.BoxGeometry(1,1,1);
-// Active Mesh Storage: key "x,y,z" -> mesh object
 const activeBlocks = {}; 
-// Modified Blocks: key "x,y,z" -> type ID (or null if removed)
-// This stores CHANGES to the procedurally generated world.
 let modifiedBlocks = {}; 
-
 const droppedItems = [];
 
 // --- PROCEDURAL GENERATION ---
-// Simple pseudo-noise function for terrain height
 function getTerrainHeight(x, z) {
-  // Combine sine waves for hills
   const h1 = Math.sin(x / 10) * 4;
   const h2 = Math.cos(z / 12) * 4;
   const h3 = Math.sin((x+z) / 20) * 2;
   return Math.floor(h1 + h2 + h3);
 }
 
+// Initialize player position safely
+const startY = getTerrainHeight(0,0) + 5;
+camera.position.set(0, startY, 0);
+
 // --- CHUNK MANAGEMENT ---
-// Checks player position and spawns/despawns blocks
 function updateWorld() {
   const px = Math.floor(camera.position.x);
   const pz = Math.floor(camera.position.z);
 
-  // 1. Mark all current blocks as "unchecked"
   for (let key in activeBlocks) {
     activeBlocks[key].keep = false;
   }
 
-  // 2. Scan area around player
   for (let x = px - RENDER_DISTANCE; x <= px + RENDER_DISTANCE; x++) {
     for (let z = pz - RENDER_DISTANCE; z <= pz + RENDER_DISTANCE; z++) {
-      
-      // World Border Check
       if (Math.abs(x) > WORLD_BORDER || Math.abs(z) > WORLD_BORDER) continue;
 
       const surfaceY = getTerrainHeight(x, z);
 
-      // We generate from Bedrock (-16) up to surface
-      for (let y = -16; y <= surfaceY + 5; y++) { // +5 for trees
-        
+      for (let y = -16; y <= surfaceY + 5; y++) {
         const key = `${x},${y},${z}`;
-
-        // If this block exists in our "Changes Save Data", use that.
-        // If modifiedBlocks[key] is undefined, use procedural generation.
-        // If modifiedBlocks[key] is null, it was deleted, so render nothing.
         
+        // Load modification
         if (modifiedBlocks.hasOwnProperty(key)) {
-           if (modifiedBlocks[key] === null) continue; // Was deleted
-           // Was placed, make sure it is rendered
+           if (modifiedBlocks[key] === null) continue;
            if (!activeBlocks[key]) spawnBlock(x, y, z, modifiedBlocks[key]);
            else activeBlocks[key].keep = true;
            continue;
         }
 
-        // Procedural Logic (only if not modified)
+        // Procedural
         let type = -1;
-        
         if (y === -16) type = 4; // Bedrock
         else if (y < surfaceY - 3) {
-           // Deep stone/ores
            type = 1;
            if (y < -10) {
-             if (Math.random() < 0.005) type = 6; // Diamond
-             else if (Math.random() < 0.05) type = 5; // Iron
+             if (Math.random() < 0.005) type = 6;
+             else if (Math.random() < 0.05) type = 5;
            } else {
-             if (Math.random() < 0.05) type = 5; // Iron upper
+             if (Math.random() < 0.05) type = 5;
            }
         } 
-        else if (y < surfaceY) type = 1; // Stone
-        else if (y === surfaceY) type = 0; // Grass
+        else if (y < surfaceY) type = 1; 
+        else if (y === surfaceY) type = 0; 
         
-        // Tree Logic (procedural)
-        // We cheat a bit: if a tree root is at (x,z), we force blocks above
-        // This is a simple per-column tree check
+        // Trees
         if (y > surfaceY) {
-           // Deterministic random based on coordinate
            const treeRng = Math.abs(Math.sin(x*123 + z*456));
-           if (treeRng < 0.05 && x%3!==0 && z%3!==0) { // Tree here
+           if (treeRng < 0.05 && x%3!==0 && z%3!==0) {
              const height = 4 + Math.floor(treeRng * 20) % 2;
-             if (y <= surfaceY + height) type = 2; // Trunk
-             else if (y <= surfaceY + height + 2) type = 3; // Leaves
+             if (y <= surfaceY + height) type = 2; 
+             else if (y <= surfaceY + height + 2) type = 3; 
            }
         }
 
@@ -289,7 +263,6 @@ function updateWorld() {
     }
   }
 
-  // 3. Remove blocks that are too far
   for (let key in activeBlocks) {
     if (!activeBlocks[key].keep) {
       scene.remove(activeBlocks[key]);
@@ -302,280 +275,4 @@ function spawnBlock(x, y, z, type) {
   const mat = materials[type];
   const finalMat = Array.isArray(mat) ? mat.map(m=>m.clone()) : mat.clone();
   const mesh = new THREE.Mesh(boxGeo, finalMat);
-  mesh.position.set(x, y, z);
-  mesh.userData = { type: type, hp: BLOCK_HP[type] || 1, key: `${x},${y},${z}` };
-  scene.add(mesh);
-  activeBlocks[`${x},${y},${z}`] = mesh;
-}
-
-// --- SAVE / LOAD SYSTEM ---
-function saveGame() {
-  const data = {
-    pos: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
-    yaw: yaw, pitch: pitch,
-    inv: inventoryCounts,
-    mods: modifiedBlocks
-  };
-  localStorage.setItem("mc_save_v1", JSON.stringify(data));
-  
-  const msg = document.getElementById("save-msg");
-  msg.innerText = "GAME SAVED!";
-  msg.style.opacity = 1;
-  setTimeout(() => msg.style.opacity = 0, 2000);
-}
-
-function loadGame() {
-  const json = localStorage.getItem("mc_save_v1");
-  if (!json) {
-    const msg = document.getElementById("save-msg");
-    msg.innerText = "NO SAVE FOUND!";
-    msg.style.opacity = 1;
-    setTimeout(() => msg.style.opacity = 0, 2000);
-    return;
-  }
-  const data = JSON.parse(json);
-  
-  // Restore State
-  camera.position.set(data.pos.x, data.pos.y, data.pos.z);
-  yaw = data.yaw; pitch = data.pitch;
-  inventoryCounts = data.inv;
-  modifiedBlocks = data.mods;
-  
-  updateUI();
-  
-  // Force full world redraw
-  for(let key in activeBlocks) { scene.remove(activeBlocks[key]); }
-  // activeBlocks is reset automatically by updateWorld logic, 
-  // but we clear the object to be safe/clean
-  for (let prop in activeBlocks) delete activeBlocks[prop];
-  
-  updateWorld();
-  
-  const msg = document.getElementById("save-msg");
-  msg.innerText = "GAME LOADED!";
-  msg.style.opacity = 1;
-  setTimeout(() => msg.style.opacity = 0, 2000);
-}
-
-// --- INPUTS ---
-document.addEventListener("keydown", e => {
-  keys[e.code] = true;
-  if(e.code === "ShiftLeft") sprint = true;
-  if(e.code === "KeyF") {
-    flying = !flying;
-    velocityY = 0;
-    document.getElementById("fly-mode").style.display = flying ? "block" : "none";
-  }
-  if(e.code === "Space" && onGround && !flying) {
-    velocityY = JUMP_FORCE; onGround = false;
-  }
-  
-  // SAVE / LOAD
-  if(e.code === "KeyK") saveGame();
-  if(e.code === "KeyL") loadGame();
-
-  if(e.key >= "1" && e.key <= "9") {
-    const idx = parseInt(e.key)-1;
-    if(idx < INV_DATA.length) { selectedSlot = idx; updateUI(); }
-  }
-});
-
-document.addEventListener("keyup", e => {
-  keys[e.code] = false;
-  if(e.code === "ShiftLeft") sprint = false;
-});
-
-document.body.addEventListener("click", () => document.body.requestPointerLock());
-window.addEventListener('contextmenu', e => e.preventDefault());
-document.addEventListener("mousemove", e => {
-  if (document.pointerLockElement === document.body) {
-    yaw -= e.movementX * 0.002;
-    pitch -= e.movementY * 0.002;
-    pitch = Math.max(-1.5, Math.min(1.5, pitch));
-  }
-});
-
-// --- INTERACTION ---
-const raycaster = new THREE.Raycaster();
-const mouse = new THREE.Vector2(0,0);
-
-function flashBlock(b) {
-  const ms = Array.isArray(b.material) ? b.material : [b.material];
-  ms.forEach(m => m.emissive.setHex(0x550000));
-  setTimeout(()=> ms.forEach(m => m.emissive.setHex(0)), 100);
-}
-
-document.addEventListener("mousedown", e => {
-  if(document.pointerLockElement !== document.body) return;
-  raycaster.setFromCamera(mouse, camera);
-  // Only intersect active blocks
-  const meshList = Object.values(activeBlocks);
-  const hits = raycaster.intersectObjects(meshList);
-  if(hits.length===0) return;
-  const hit = hits[0];
-  const b = hit.object;
-  const type = b.userData.type;
-
-  // MINE
-  if(e.button === 0) {
-    let damage = 1;
-    if (flying) damage = 999999; 
-    else {
-      const item = INV_DATA[selectedSlot];
-      if (item.type === 1) { 
-        if (item.toolId==="pick" && (type===1||type===5||type===6)) damage = 10;
-        if (item.toolId==="axe" && (type===2)) damage = 10;
-        if (item.toolId==="shovel" && (type===0)) damage = 10;
-      }
-      if (type === 4) return; 
-    }
-
-    b.userData.hp -= damage;
-    flashBlock(b);
-
-    if (b.userData.hp <= 0) {
-      if (type !== 4) { 
-        const drop = new THREE.Mesh(boxGeo, b.material);
-        drop.scale.set(0.3,0.3,0.3);
-        drop.position.copy(b.position);
-        drop.userData = { isDrop:true, velY: 0.2, type: type };
-        droppedItems.push(drop);
-        scene.add(drop);
-      }
-      // Record removal in modifiedBlocks
-      modifiedBlocks[b.userData.key] = null;
-      
-      scene.remove(b);
-      delete activeBlocks[b.userData.key];
-    }
-  }
-  // PLACE
-  else if (e.button === 2) {
-    const item = INV_DATA[selectedSlot];
-    if (item.type === 0 && (flying || inventoryCounts[selectedSlot] > 0)) {
-      const pos = b.position.clone().add(hit.face.normal);
-      // Boundary check
-      if (Math.abs(pos.x) > WORLD_BORDER || Math.abs(pos.z) > WORLD_BORDER) return;
-      
-      // Player collision check
-      const pPos = camera.position.clone(); pPos.y -= 1.6;
-      if(pos.distanceTo(pPos) < 1.0) return;
-
-      const key = `${pos.x},${pos.y},${pos.z}`;
-      spawnBlock(pos.x, pos.y, pos.z, item.blockId);
-      
-      // Record placement
-      modifiedBlocks[key] = item.blockId;
-
-      if(!flying) {
-        inventoryCounts[selectedSlot]--;
-        updateUI();
-      }
-    }
-  }
-});
-
-function updateUI() {
-  document.querySelectorAll(".slot").forEach((el, i) => {
-    if(i===selectedSlot) el.classList.add("selected");
-    else el.classList.remove("selected");
-    const countEl = el.querySelector(".count");
-    if(countEl) countEl.innerText = inventoryCounts[i];
-  });
-}
-
-// --- MAIN LOOP ---
-setInterval(updateWorld, 500); // Check for new chunks every 0.5s
-
-function animate() {
-  requestAnimationFrame(animate);
-  
-  camera.rotation.y = yaw;
-  camera.rotation.x = pitch;
-  
-  const speed = flying ? SPEED_FLY : (sprint ? SPEED_SPRINT : SPEED_WALK);
-  const dir = new THREE.Vector3();
-  const fwd = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)).normalize();
-  const rgt = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)).normalize();
-  
-  if(keys["KeyW"]) dir.add(fwd);
-  if(keys["KeyS"]) dir.sub(fwd);
-  if(keys["KeyA"]) dir.sub(rgt);
-  if(keys["KeyD"]) dir.add(rgt);
-  
-  // FLYING VERTICAL CONTROLS (ARROWS)
-  if(flying) {
-    if(keys["ArrowUp"]) camera.position.y += speed;
-    if(keys["ArrowDown"]) camera.position.y -= speed;
-  }
-  
-  // BORDER COLLISION
-  if (Math.abs(camera.position.x) > WORLD_BORDER) camera.position.x = Math.sign(camera.position.x) * WORLD_BORDER;
-  if (Math.abs(camera.position.z) > WORLD_BORDER) camera.position.z = Math.sign(camera.position.z) * WORLD_BORDER;
-
-  if(dir.length() > 0) {
-    dir.normalize();
-    const rayOrigin = camera.position.clone(); rayOrigin.y-=1;
-    // We only check collision against active meshes
-    const meshList = Object.values(activeBlocks);
-    const moveRay = new THREE.Raycaster(rayOrigin, dir, 0, 0.5);
-    if(moveRay.intersectObjects(meshList).length===0) camera.position.addScaledVector(dir, speed);
-  }
-  
-  // GRAVITY
-  if(!flying) {
-    if(!onGround) velocityY -= GRAVITY;
-    camera.position.y += velocityY;
-    
-    const downRay = new THREE.Raycaster(camera.position, new THREE.Vector3(0,-1,0), 0, 1.8);
-    const meshList = Object.values(activeBlocks);
-    const hits = downRay.intersectObjects(meshList);
-    
-    if(hits.length>0 && velocityY<=0) {
-      camera.position.y = hits[0].point.y + 1.8;
-      velocityY=0; onGround=true;
-    } else {
-      onGround=false;
-    }
-  }
-  
-  if(camera.position.y < -30 && !flying) { camera.position.set(0,15,0); velocityY=0; }
-
-  // Drops Logic
-  for(let i=droppedItems.length-1; i>=0; i--) {
-    const d = droppedItems[i];
-    d.userData.velY -= GRAVITY;
-    d.position.y += d.userData.velY;
-    
-    if(d.position.y < Math.floor(d.position.y)+0.5) {
-       d.position.y = Math.floor(d.position.y)+0.5;
-       d.userData.velY = 0;
-    }
-    d.rotation.y += 0.05;
-    
-    if(d.position.distanceTo(camera.position) < 1.5) {
-      const type = d.userData.type;
-      let slotIdx = -1;
-      INV_DATA.forEach((item, idx) => { if(item.blockId === type) slotIdx = idx; });
-      if(slotIdx > -1) { inventoryCounts[slotIdx]++; updateUI(); }
-      scene.remove(d);
-      droppedItems.splice(i,1);
-    }
-  }
-
-  renderer.render(scene, camera);
-}
-
-// Initial Generation
-updateWorld();
-updateUI();
-animate();
-
-window.addEventListener("resize", () => {
-  camera.aspect = window.innerWidth/window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-});
-</script>
-</body>
-</html>
+  mesh.position.set(x
