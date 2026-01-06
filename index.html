@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Minecraft Phase 2: Tools</title>
+<title>Minecraft Phase 2.5: Physics Update</title>
 <style>
   body { margin: 0; overflow: hidden; background: #87ceeb; font-family: monospace; user-select: none; }
   
@@ -34,18 +34,12 @@
   
   .icon { width: 24px; height: 24px; border: 1px solid #000; margin-bottom: 2px; box-shadow: 2px 2px 0 rgba(0,0,0,0.5); }
   
-  /* Tool Styles */
   .tool-pick { background: linear-gradient(135deg, #eee 50%, #8b4513 50%); }
   .tool-axe  { background: linear-gradient(135deg, #8b4513 30%, #eee 30%); }
   .tool-shovel { background: linear-gradient(to bottom, #eee 40%, #8b4513 40%); }
 
-  .count {
-    font-size: 14px; color: white; text-shadow: 1px 1px 0 #000;
-  }
-  
-  .key-bind {
-    position: absolute; top: 2px; left: 2px; font-size: 10px; color: #ccc;
-  }
+  .count { font-size: 14px; color: white; text-shadow: 1px 1px 0 #000; }
+  .key-bind { position: absolute; top: 2px; left: 2px; font-size: 10px; color: #ccc; }
 </style>
 </head>
 <body>
@@ -58,9 +52,7 @@
     <div class="slot" id="slot-1"><span class="key-bind">2</span><div class="icon" style="background:#777"></div><span class="count">0</span></div>
     <div class="slot" id="slot-2"><span class="key-bind">3</span><div class="icon" style="background:#5c4033"></div><span class="count">0</span></div>
     <div class="slot" id="slot-3"><span class="key-bind">4</span><div class="icon" style="background:#4caf50"></div><span class="count">0</span></div>
-    
     <div style="width: 10px;"></div>
-
     <div class="slot" id="slot-4"><span class="key-bind">5</span><div class="icon tool-pick"></div></div>
     <div class="slot" id="slot-5"><span class="key-bind">6</span><div class="icon tool-axe"></div></div>
     <div class="slot" id="slot-6"><span class="key-bind">7</span><div class="icon tool-shovel"></div></div>
@@ -70,10 +62,11 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
 
 <script>
-// --- CONFIGURATION ---
-const SPEED_WALK = 0.11;  // Faster!
-const SPEED_SPRINT = 0.20; // Much faster!
-const JUMP_FORCE = 0.26;   // Higher!
+// --- PHYSICS TUNING (THE FUN PART) ---
+const SPEED_WALK = 0.14;   // Faster walk
+const SPEED_SPRINT = 0.24; // Fast sprint
+const JUMP_FORCE = 0.32;   // Snappy jump
+const GRAVITY = 0.016;     // Heavier gravity (less floaty)
 
 // --- SCENE SETUP ---
 const scene = new THREE.Scene();
@@ -140,8 +133,7 @@ const materials = [
   new THREE.MeshLambertMaterial({ map: texLeaves })
 ];
 
-// Block HP: How many clicks to break with HAND
-const BLOCK_HP = { 0: 2, 1: 3, 2: 3, 3: 1 }; // Grass=2, Stone=3, Wood=3, Leaves=1
+const BLOCK_HP = { 0: 2, 1: 3, 2: 3, 3: 1 }; 
 
 // --- GAME VARIABLES ---
 let yaw = 0;
@@ -151,11 +143,12 @@ let velocityY = 0;
 let onGround = false;
 let sprint = false;
 
-// Inventory: 0-3 are blocks, 4-6 are tools (Pick, Axe, Shovel)
-// Counts only matter for blocks (indices 0-3)
+// FOV Variables for the effect
+let baseFov = 75;
+let targetFov = 75;
+
 const inventory = [0, 0, 0, 0, 1, 1, 1]; 
 let selectedSlot = 0; 
-
 const blocks = [];       
 const droppedItems = []; 
 const boxGeo = new THREE.BoxGeometry(1, 1, 1);
@@ -168,7 +161,6 @@ document.addEventListener("keydown", e => {
     velocityY = JUMP_FORCE; 
     onGround = false;
   }
-  // Select Slots 1-7
   if (e.key >= "1" && e.key <= "7") {
     selectedSlot = parseInt(e.key) - 1;
     updateUI();
@@ -200,20 +192,13 @@ scene.add(sun);
 // --- WORLD GEN ---
 function createBlock(x, y, z, type) {
   const mat = materials[type];
-  // Clone material so we can flash it red individually
   let finalMat;
-  if (Array.isArray(mat)) {
-    finalMat = mat.map(m => m.clone());
-  } else {
-    finalMat = mat.clone();
-  }
+  if (Array.isArray(mat)) finalMat = mat.map(m => m.clone());
+  else finalMat = mat.clone();
 
   const mesh = new THREE.Mesh(boxGeo, finalMat);
   mesh.position.set(x, y, z);
-  mesh.userData = { 
-    type: type, 
-    hp: BLOCK_HP[type] || 1 // Set initial Health
-  }; 
+  mesh.userData = { type: type, hp: BLOCK_HP[type] || 1 }; 
   scene.add(mesh);
   blocks.push(mesh);
   return mesh;
@@ -248,7 +233,6 @@ const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2(0, 0);
 
 function flashBlock(block) {
-  // Simple flash effect using emissive color
   const mats = Array.isArray(block.material) ? block.material : [block.material];
   mats.forEach(m => m.emissive.setHex(0xff0000));
   setTimeout(() => {
@@ -258,7 +242,6 @@ function flashBlock(block) {
 
 document.addEventListener("mousedown", e => {
   if (document.pointerLockElement !== document.body) return;
-  
   raycaster.setFromCamera(mouse, camera);
   const hits = raycaster.intersectObjects(blocks);
   if (hits.length === 0) return;
@@ -267,43 +250,31 @@ document.addEventListener("mousedown", e => {
   const hitBlock = hit.object;
   const blockType = hitBlock.userData.type;
 
-  // === LEFT CLICK: MINE ===
   if (e.button === 0) {
-    let damage = 1; // Hand damage
-
-    // Check Tools
-    // Slot 4=Pickaxe, 5=Axe, 6=Shovel
-    if (selectedSlot === 4 && blockType === 1) damage = 10; // Pickaxe vs Stone
-    if (selectedSlot === 5 && blockType === 2) damage = 10; // Axe vs Wood
-    if (selectedSlot === 6 && (blockType === 0 || blockType === 3)) damage = 10; // Shovel vs Grass/Leaves
+    let damage = 1; 
+    if (selectedSlot === 4 && blockType === 1) damage = 10; 
+    if (selectedSlot === 5 && blockType === 2) damage = 10; 
+    if (selectedSlot === 6 && (blockType === 0 || blockType === 3)) damage = 10; 
 
     hitBlock.userData.hp -= damage;
     flashBlock(hitBlock);
 
-    // If broken
     if (hitBlock.userData.hp <= 0) {
-      // Create Drop
-      const drop = new THREE.Mesh(boxGeo, hitBlock.material); // Use same material
+      const drop = new THREE.Mesh(boxGeo, hitBlock.material); 
       drop.scale.set(0.25, 0.25, 0.25);
       drop.position.copy(hitBlock.position);
       drop.userData = { isDrop: true, velocityY: 0.3, type: blockType };
       droppedItems.push(drop);
       scene.add(drop);
-
       scene.remove(hitBlock);
       blocks.splice(blocks.indexOf(hitBlock), 1);
     }
-  } 
-  
-  // === RIGHT CLICK: PLACE ===
-  else if (e.button === 2) {
-    // Only place if selecting a block (slots 0-3)
+  } else if (e.button === 2) {
     if (selectedSlot <= 3 && inventory[selectedSlot] > 0) {
       const newPos = hitBlock.position.clone().add(hit.face.normal);
       const playerPos = camera.position.clone();
       playerPos.y -= 1.6;
       if (newPos.distanceTo(playerPos) < 1.0) return;
-
       createBlock(newPos.x, newPos.y, newPos.z, selectedSlot);
       inventory[selectedSlot]--;
       updateUI();
@@ -316,15 +287,11 @@ function updateUI() {
   slots.forEach((slot, index) => {
     if (index === selectedSlot) slot.classList.add("selected");
     else slot.classList.remove("selected");
-    
-    // Update counts for blocks only
-    if (index < 4) {
-       slot.querySelector(".count").innerText = inventory[index];
-    }
+    if (index < 4) slot.querySelector(".count").innerText = inventory[index];
   });
 }
 
-// --- LOOP ---
+// --- ANIMATION LOOP ---
 const downRay = new THREE.Raycaster();
 
 function animate() {
@@ -333,6 +300,7 @@ function animate() {
   camera.rotation.y = yaw;
   camera.rotation.x = pitch;
 
+  // PHYSICS: MOVEMENT
   const speed = sprint ? SPEED_SPRINT : SPEED_WALK;
   const dir = new THREE.Vector3();
   const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)).normalize();
@@ -342,6 +310,16 @@ function animate() {
   if (keys["KeyS"]) dir.sub(forward);
   if (keys["KeyA"]) dir.sub(right);
   if (keys["KeyD"]) dir.add(right);
+
+  // PHYSICS: DYNAMIC FOV
+  // If moving, widen FOV slightly. If sprinting, widen a lot.
+  if (sprint && dir.length() > 0) targetFov = 85;
+  else if (dir.length() > 0) targetFov = 77;
+  else targetFov = 75;
+  
+  // Smoothly change FOV (Linear Interpolation)
+  camera.fov += (targetFov - camera.fov) * 0.1;
+  camera.updateProjectionMatrix();
 
   if (dir.length() > 0) {
     dir.normalize();
@@ -353,7 +331,8 @@ function animate() {
     }
   }
 
-  if (!onGround) velocityY -= 0.012; // Adjusted gravity
+  // PHYSICS: GRAVITY
+  if (!onGround) velocityY -= GRAVITY; 
   camera.position.y += velocityY;
 
   downRay.set(camera.position, new THREE.Vector3(0, -1, 0));
@@ -376,10 +355,10 @@ function animate() {
     velocityY = 0;
   }
 
-  // Drops
+  // DROPS
   for (let i = droppedItems.length - 1; i >= 0; i--) {
     const item = droppedItems[i];
-    item.userData.velocityY -= 0.01;
+    item.userData.velocityY -= GRAVITY;
     item.position.y += item.userData.velocityY;
     
     if (item.position.y < Math.floor(item.position.y) + 0.5) {
@@ -391,7 +370,7 @@ function animate() {
 
     if (camera.position.distanceTo(item.position) < 1.5) {
       const type = item.userData.type;
-      if (type <= 3) { // Only pick up blocks
+      if (type <= 3) { 
         inventory[type]++;
         updateUI();
       }
