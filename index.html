@@ -339,22 +339,27 @@ if (moveDir.length() > 0) {
 camera.position.y += velocityY;
 
 
-// ===== PROPER MINECRAFT-STYLE GROUND CHECK =====
+// ===== FIXED GROUND CHECK (JUMP FRIENDLY) =====
 downRay.set(
-  new THREE.Vector3(
-    camera.position.x,
-    camera.position.y - 1,
-    camera.position.z
-  ),
+  camera.position,
   new THREE.Vector3(0, -1, 0)
 );
 
 const groundHits = downRay.intersectObjects(blocks);
 
-if (groundHits.length > 0 && groundHits[0].distance < 1.7) {
-  camera.position.y = groundHits[0].point.y + 1.62;
-  velocityY = 0;
-  onGround = true;
+if (groundHits.length > 0) {
+  const hit = groundHits[0];
+
+  // Player height = 1.8 (Minecraft‑like)
+  const feetY = camera.position.y - 1.8;
+
+  if (feetY <= hit.point.y + 0.05 && velocityY <= 0) {
+    camera.position.y = hit.point.y + 1.8;
+    velocityY = 0;
+    onGround = true;
+  } else {
+    onGround = false;
+  }
 } else {
   onGround = false;
 }
