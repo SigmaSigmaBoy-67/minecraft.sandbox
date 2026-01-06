@@ -175,7 +175,7 @@ const stoneMaterial = new THREE.MeshLambertMaterial({ map: stone });
 const blocks = [];
 const raycaster = new THREE.Raycaster();
 const downRay = new THREE.Raycaster();
-downRay.far = 2.1; // player height + small buffer
+downRay.far = 1.1; // only check directly under feet
 const mouse = new THREE.Vector2(0, 0); // center of screen
 raycaster.far = 6; // interaction distance (Minecraft-style reach)
 const droppedItems = [];
@@ -321,24 +321,22 @@ if (!onGround) {
   camera.position.y += velocityY;
 }
 
-// ===== REAL GROUND CHECK (BLOCK BASED) =====
+// ===== PROPER MINECRAFT-STYLE GROUND CHECK =====
 downRay.set(
-  camera.position,
+  new THREE.Vector3(
+    camera.position.x,
+    camera.position.y - 0.1,
+    camera.position.z
+  ),
   new THREE.Vector3(0, -1, 0)
 );
 
 const groundHits = downRay.intersectObjects(blocks);
 
-if (groundHits.length > 0) {
-  const groundY = groundHits[0].point.y + 1; // top of block
-
-  if (camera.position.y <= groundY + 0.01) {
-    camera.position.y = groundY;
-    velocityY = 0;
-    onGround = true;
-  } else {
-    onGround = false;
-  }
+if (groundHits.length > 0 && groundHits[0].distance < 1.01) {
+  velocityY = Math.max(velocityY, 0);
+  camera.position.y = groundHits[0].point.y + 1;
+  onGround = true;
 } else {
   onGround = false;
 }
