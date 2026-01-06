@@ -216,6 +216,10 @@ const GRAVITY = -0.01;
 const JUMP_FORCE = 0.25;
 const PLAYER_HEIGHT = 1.8;
 const PLAYER_RADIUS = 0.35;
+if (!Number.isFinite(camera.position.y)) {
+  camera.position.set(0, 3, 5);
+  velocityY = 0;
+}
 
 document.addEventListener("keydown", e => {
   keys[e.code] = true;
@@ -255,7 +259,9 @@ document.addEventListener("mousedown", e => {
   const hitBlock = hits[0].object;
 
   scene.remove(hitBlock);
-  blocks.splice(blocks.indexOf(hitBlock), 1);
+const i = blocks.indexOf(hitBlock);
+if (i !== -1) blocks.splice(i, 1);
+
 
   const drop = hitBlock.clone();
   drop.scale.set(0.4, 0.4, 0.4);
@@ -278,6 +284,7 @@ document.addEventListener("mousedown", e => {
 ========================= */
 function animate() {
   requestAnimationFrame(animate);
+console.log("frame");
 
 camera.rotation.order = "YXZ";
 camera.rotation.y = yaw;
@@ -353,7 +360,6 @@ if (groundHits.length > 0 && groundHits[0].distance < 1.7) {
 }
 
 
-const groundHits = downRay.intersectObjects(blocks);
 
 if (groundHits.length > 0 && groundHits[0].distance < 1.01) {
   velocityY = Math.max(velocityY, 0);
