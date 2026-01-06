@@ -232,12 +232,19 @@ document.body.addEventListener("click", () => {
   document.body.requestPointerLock();
 });
 
+document.addEventListener("mousemove", e => {
+  if (document.pointerLockElement !== document.body) return;
+
+  yaw -= e.movementX * 0.002;
+  pitch -= e.movementY * 0.002;
+  pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
+});
+
 document.addEventListener("mousedown", e => {
   if (e.button !== 0) return;
 
   raycaster.setFromCamera(mouse, camera);
-  const hits = raycaster.intersectObjects(blocks); // ✅ THIS LINE WAS MISSING
-
+  const hits = raycaster.intersectObjects(blocks); 
   if (hits.length === 0) return;
 
   const hitBlock = hits[0].object;
@@ -259,30 +266,6 @@ document.addEventListener("mousedown", e => {
   scene.add(drop);
 });
 
-
- const droppedItems = [];
-
-document.addEventListener("mousedown", e => {
-  if (e.button !== 0) return;
-
-  raycaster.setFromCamera(mouse, camera);
-  const hits = raycaster.intersectObjects(blocks);
-  if (hits.length === 0) return;
-
-  const hitBlock = hits[0].object;
-
-  scene.remove(hitBlock);
-  blocks.splice(blocks.indexOf(hitBlock), 1);
-
-  const drop = hitBlock.clone();
-  drop.scale.set(0.4, 0.4, 0.4);
-  drop.position.copy(hitBlock.position);
-  drop.position.y += 0.6;
-  drop.userData.velocityY = 0;
-
-  droppedItems.push(drop);
-  scene.add(drop);
-});
 
 
 /* =========================
