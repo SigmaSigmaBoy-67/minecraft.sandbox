@@ -101,11 +101,45 @@ const camera = new THREE.PerspectiveCamera(
 );
 
 camera.position.set(0, 2, 5);
+ 
+/* =========================
+   PLAYER STATE (REQUIRED)
+========================= */
+let yaw = 0;
+let pitch = 0;
+
+const keys = {};
+let sprint = false;
+
+let velocityY = 0;
+let onGround = false;
+
+const GRAVITY = -0.01;
+const JUMP_FORCE = 0.25;
+
+const PLAYER_HEIGHT = 1.8;
+const PLAYER_RADIUS = 0.35;
 
 const renderer = new THREE.WebGLRenderer({ antialias: false });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(1);
+ 
 document.body.appendChild(renderer.domElement);
+ document.addEventListener("keydown", e => {
+  keys[e.code] = true;
+  if (e.code === "ShiftLeft") sprint = true;
+  if (e.code === "Space" && onGround) {
+    velocityY = JUMP_FORCE;
+    onGround = false;
+  }
+});
+
+document.addEventListener("keyup", e => {
+  keys[e.code] = false;
+  if (e.code === "ShiftLeft") sprint = false;
+});
+
+ 
 /* =========================
    LIGHTING
 ========================= */
@@ -203,26 +237,7 @@ document.addEventListener("mousedown", e => {
 document.body.addEventListener("click", () => {
   document.body.requestPointerLock();
 });
-document.addEventListener("mousemove", e => {
-  if (document.pointerLockElement !== document.body) return;
-  yaw -= e.movementX * 0.002;
-  pitch -= e.movementY * 0.002;
-  pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
-});
-document.addEventListener("mousedown", e => {
-  if (e.button !== 0) return;
-  // DROP if holding something
-  if (heldItem) {
-    heldItem = null;
-    return;
-  }
-  raycaster.setFromCamera(mouse, camera);
-  const hits = raycaster.intersectObjects(blocks); 
-  if (hits.length === 0) return;
-  const hitBlock = hits[0].object;
-  scene.remove(hitBlock);
-const i = blocks.indexOf(hitBlock);
-if (i !== -1) blocks.splice(i, 1);
+ 
   const drop = hitBlock.clone();
   drop.scale.set(0.4, 0.4, 0.4);
   drop.position.copy(hitBlock.position);
