@@ -175,6 +175,7 @@ const stoneMaterial = new THREE.MeshLambertMaterial({ map: stone });
 const blocks = [];
 const raycaster = new THREE.Raycaster();
 const downRay = new THREE.Raycaster();
+downRay.far = 2.1; // player height + small buffer
 const mouse = new THREE.Vector2(0, 0); // center of screen
 raycaster.far = 6; // interaction distance (Minecraft-style reach)
 const droppedItems = [];
@@ -292,9 +293,34 @@ camera.rotation.x = pitch;
   if (keys["KeyS"]) camera.position.addScaledVector(forward, -speed);
   if (keys["KeyA"]) camera.position.addScaledVector(right, -speed);
   if (keys["KeyD"]) camera.position.addScaledVector(right, speed);
-// ===== GRAVITY + JUMP =====
-velocityY += GRAVITY;
-camera.position.y += velocityY;
+// ===== REAL GRAVITY (BLOCK-BASED) =====
+downRay.set(
+  new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z),
+  new THREE.Vector3(0, -1, 0)
+);
+
+const groundHits = downRay.intersectObjects(blocks);
+
+if (groundHits.length > 0) {
+  const groundY = groundHits[0].point.y + 1; // top of block
+
+  if (camera.position.y <= groundY + 0.01) {
+    camera.position.y = groundY;
+    velocityY = 0;
+    onGround = true;
+  } else {
+    onGround = false;
+  }
+} else {
+  onGround = false;
+}
+
+// apply gravity ONLY if not grounded
+if (!onGround) {
+  velocityY += GRAVITY;
+  camera.position.y += velocityY;
+}
+
 // ===== REAL GROUND CHECK (BLOCK BASED) =====
 downRay.set(
   camera.position,
