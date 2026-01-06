@@ -340,7 +340,6 @@ if (moveDir.length() > 0) {
 camera.position.y += velocityY;
 
 
-// ===== FIXED GROUND CHECK (JUMP FRIENDLY) =====
 downRay.set(
   camera.position,
   new THREE.Vector3(0, -1, 0)
@@ -350,12 +349,10 @@ const groundHits = downRay.intersectObjects(blocks);
 
 if (groundHits.length > 0) {
   const hit = groundHits[0];
-
-  // Player height = 1.8 (Minecraft‑like)
-  const feetY = camera.position.y - 1.8;
+  const feetY = camera.position.y - PLAYER_HEIGHT;
 
   if (feetY <= hit.point.y + 0.05 && velocityY <= 0) {
-    camera.position.y = hit.point.y + 1.8;
+    camera.position.y = hit.point.y + PLAYER_HEIGHT;
     velocityY = 0;
     onGround = true;
   } else {
@@ -364,7 +361,6 @@ if (groundHits.length > 0) {
 } else {
   onGround = false;
 }
-
 
 // ===== PICKUP DROPS =====
 for (let i = droppedItems.length - 1; i >= 0; i--) {
