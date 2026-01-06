@@ -2,44 +2,46 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Minecraft Phase 6.5: Fixed Lighting</title>
+<title>Minecraft Phase 7: Guaranteed Load</title>
 <style>
   body { margin: 0; overflow: hidden; background: #87ceeb; font-family: monospace; user-select: none; }
+  
+  /* UI LAYERS */
+  #game-ui { visibility: hidden; } /* Hidden until loaded */
   
   #crosshair {
     position: fixed; top: 50%; left: 50%;
     width: 10px; height: 10px;
     margin-left: -5px; margin-top: -5px;
     border: 2px solid white; box-sizing: border-box;
-    pointer-events: none; z-index: 10; visibility: hidden;
+    pointer-events: none; z-index: 10;
   }
 
-  #ui {
+  #ui-container {
     position: fixed; bottom: 10px; left: 50%;
     transform: translateX(-50%);
-    text-align: center; pointer-events: none; visibility: hidden;
+    text-align: center; pointer-events: none;
   }
 
   /* LOADING SCREEN */
-  #loading-container {
-    position: fixed; top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    width: 300px; text-align: center;
-    z-index: 20;
-  }
-  #overlay-text {
-    color: white; font-weight: bold; font-size: 16px;
-    text-shadow: 1px 1px 0 #000; margin-bottom: 10px;
-  }
-  #progress-bar-container {
-    width: 100%; height: 20px; background: #333;
-    border: 2px solid white;
-  }
-  #progress-bar {
-    width: 0%; height: 100%; background: #4caf50;
-    transition: width 0.1s;
+  #loading-screen {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: #222; z-index: 100;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
   }
   
+  #loading-text {
+    color: white; font-size: 20px; margin-bottom: 20px; font-weight: bold;
+  }
+  
+  #progress-bar-box {
+    width: 300px; height: 30px; border: 3px solid white; padding: 2px;
+  }
+  
+  #progress-bar {
+    width: 0%; height: 100%; background: #4caf50; transition: width 0.1s;
+  }
+
   #hotbar {
     display: flex; gap: 4px; justify-content: center; margin-top: 6px;
     background: rgba(0,0,0,0.2); padding: 5px; border-radius: 5px;
@@ -53,7 +55,6 @@
     position: relative;
   }
   .slot.selected { background: #bbb; border-color: white; }
-  
   .slot-icon { width: 32px; height: 32px; image-rendering: pixelated; }
   .count { position: absolute; bottom: 2px; right: 2px; font-size: 14px; color: white; text-shadow: 2px 2px 0 #000; }
   .key-bind { position: absolute; top: 2px; left: 2px; font-size: 10px; color: #444; font-weight: bold; }
@@ -61,17 +62,16 @@
 </head>
 <body>
 
-<div id="crosshair"></div>
-
-<div id="loading-container">
-  <div id="overlay-text">GENERATING WORLD... 0%</div>
-  <div id="progress-bar-container">
-    <div id="progress-bar"></div>
-  </div>
+<div id="loading-screen">
+  <div id="loading-text">GENERATING WORLD... 0%</div>
+  <div id="progress-bar-box"><div id="progress-bar"></div></div>
 </div>
 
-<div id="ui">
-  <div id="hotbar"></div>
+<div id="game-ui">
+  <div id="crosshair"></div>
+  <div id="ui-container">
+    <div id="hotbar"></div>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
@@ -91,12 +91,11 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
 scene.fog = new THREE.Fog(0x87ceeb, 8, 24);
 
-// LIGHTING (FIXED!)
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+// LIGHTING
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
 scene.add(ambientLight);
-
-const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
-dirLight.position.set(10, 20, 10);
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
+dirLight.position.set(20, 50, 20);
 scene.add(dirLight);
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -150,15 +149,11 @@ function drawPixels(ctx, map, palette) {
   }
 }
 
-// DEFINING TEXTURES
+// TEXTURES
 const tGrassTop = createTexture(c => fillNoise(c, ["#4caf50", "#388e3c"]));
 const tGrassSide = createTexture(c => { fillNoise(c, ["#795548", "#5d4037"]); c.fillStyle = "#4caf50"; c.fillRect(0,0,16,4); });
 const tDirt = createTexture(c => fillNoise(c, ["#795548", "#5d4037"]));
 const tStone = createTexture(c => fillNoise(c, ["#9e9e9e", "#757575", "#616161"]));
-const tWood = createTexture(c => { fillNoise(c, ["#5d4037", "#4e342e"]); c.fillStyle = "#3e2723"; c.fillRect(4,0,2,16); c.fillRect(10,0,2,16); });
-const tLeaves = createTexture(c => fillNoise(c, ["#2e7d32", "#1b5e20", "#4caf50"]));
-const tIron = createTexture(c => { fillNoise(c, ["#9e9e9e", "#757575"]); c.fillStyle = "#d7ccc8"; for(let i=0; i<8; i++) c.fillRect(Math.random()*14+1, Math.random()*14+1, 2, 2); });
-const tDiamond = createTexture(c => { fillNoise(c, ["#9e9e9e", "#757575"]); c.fillStyle = "#00bcd4"; for(let i=0; i<6; i++) c.fillRect(Math.random()*14+1, Math.random()*14+1, 2, 2); });
-const tBedrock = createTexture(c => fillNoise(c, ["#000", "#222", "#111"]));
+const tWood = createTexture(c => { fillNoise(c, ["#5d4037", "#4e342e"]); c.fillStyle = "#3e2723"; c.fillRect(4,0,2,16);
 
 const pickMap = ["   BBBB         ", "   B  B         ", "   B  B         ", "    SS          ", "    SS          ", "    SS          ",
