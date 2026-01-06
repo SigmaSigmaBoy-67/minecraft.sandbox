@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Minecraft Phase 2.5: Physics Update</title>
+<title>Minecraft Phase 3: Deep World & Flight</title>
 <style>
   body { margin: 0; overflow: hidden; background: #87ceeb; font-family: monospace; user-select: none; }
   
@@ -18,6 +18,13 @@
     position: fixed; bottom: 10px; left: 50%;
     transform: translateX(-50%);
     text-align: center; pointer-events: none;
+  }
+
+  /* FLIGHT INDICATOR */
+  #fly-mode {
+    position: fixed; top: 10px; left: 10px;
+    color: yellow; font-weight: bold; font-size: 18px;
+    text-shadow: 2px 2px 0 #000; display: none;
   }
 
   #hotbar {
@@ -45,6 +52,7 @@
 <body>
 
 <div id="crosshair"></div>
+<div id="fly-mode">FLYING MODE ENABLED</div>
 
 <div id="ui">
   <div id="hotbar">
@@ -62,11 +70,14 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
 
 <script>
-// --- PHYSICS TUNING (THE FUN PART) ---
-const SPEED_WALK = 0.14;   // Faster walk
-const SPEED_SPRINT = 0.24; // Fast sprint
-const JUMP_FORCE = 0.32;   // Snappy jump
-const GRAVITY = 0.016;     // Heavier gravity (less floaty)
+// --- PHYSICS TUNING 2.0 (SNAPPY) ---
+const SPEED_WALK = 0.14;   
+const SPEED_SPRINT = 0.24; 
+const SPEED_FLY = 0.35;    // Flying is fast
+
+// To make jumping "lower and faster", we increase gravity AND lower jump force slightly
+const JUMP_FORCE = 0.27;   // Lower (was 0.32)
+const GRAVITY = 0.022;     // Much heavier (was 0.016)
 
 // --- SCENE SETUP ---
 const scene = new THREE.Scene();
@@ -107,6 +118,7 @@ const texStone = makeTexture(["#888888", "#777777", "#999999"]);
 const texWoodSide = makeTexture(["#5c4033", "#4e342e", "#3e2723"]);
 const texWoodTop = makeTexture(["#8d6e63", "#795548"]);
 const texLeaves = makeTexture(["#4caf50", "#388e3c", "#66bb6a"]);
+const texBedrock = makeTexture(["#222", "#333", "#111", "#000"]); // Dark, messy texture
 
 const materials = [
   // 0: GRASS
@@ -130,10 +142,12 @@ const materials = [
     new THREE.MeshLambertMaterial({ map: texWoodSide })  
   ],
   // 3: LEAVES
-  new THREE.MeshLambertMaterial({ map: texLeaves })
+  new THREE.MeshLambertMaterial({ map: texLeaves }),
+  // 4: BEDROCK
+  new THREE.MeshLambertMaterial({ map: texBedrock })
 ];
 
-const BLOCK_HP = { 0: 2, 1: 3, 2: 3, 3: 1 }; 
+const BLOCK_HP = { 0: 2, 1: 3, 2: 3, 3: 1, 4: 999999 }; // Bedrock is unbreakable
 
 // --- GAME VARIABLES ---
 let yaw = 0;
@@ -142,9 +156,8 @@ const keys = {};
 let velocityY = 0;
 let onGround = false;
 let sprint = false;
+let flying = false; // Flight toggle
 
-// FOV Variables for the effect
-let baseFov = 75;
 let targetFov = 75;
 
 const inventory = [0, 0, 0, 0, 1, 1, 1]; 
@@ -157,10 +170,21 @@ const boxGeo = new THREE.BoxGeometry(1, 1, 1);
 document.addEventListener("keydown", e => {
   keys[e.code] = true;
   if (e.code === "ShiftLeft") sprint = true;
-  if (e.code === "Space" && onGround) {
+  
+  // Jump logic (only if not flying)
+  if (e.code === "Space" && onGround && !flying) {
     velocityY = JUMP_FORCE; 
     onGround = false;
   }
+  
+  // Toggle Flight (Key: F)
+  if (e.code === "KeyF") {
+    flying = !flying;
+    velocityY = 0;
+    document.getElementById("fly-mode").style.display = flying ? "block" : "none";
+  }
+
+  // Hotbar
   if (e.key >= "1" && e.key <= "7") {
     selectedSlot = parseInt(e.key) - 1;
     updateUI();
@@ -222,8 +246,9 @@ function createTree(x, z) {
 const worldSize = 12; 
 for (let x = -worldSize; x < worldSize; x++) {
   for (let z = -worldSize; z < worldSize; z++) {
-    createBlock(x, 0, z, 0); 
-    for (let y = -1; y > -4; y--) createBlock(x, y, z, 1);
+    createBlock(x, 0, z, 0); // Grass
+    for (let y = -1; y > -5; y--) createBlock(x, y, z, 1); // Stone
+    createBlock(x, -5, z, 4); // BEDROCK at bottom
     if (Math.random() < 0.025 && (Math.abs(x) > 3 || Math.abs(z) > 3)) createTree(x, z);
   }
 }
@@ -249,12 +274,19 @@ document.addEventListener("mousedown", e => {
   const hit = hits[0];
   const hitBlock = hit.object;
   const blockType = hitBlock.userData.type;
+  
+  // Bedrock Check
+  if (blockType === 4) return; // Cannot interact with bedrock
 
+  // MINE
   if (e.button === 0) {
     let damage = 1; 
     if (selectedSlot === 4 && blockType === 1) damage = 10; 
     if (selectedSlot === 5 && blockType === 2) damage = 10; 
     if (selectedSlot === 6 && (blockType === 0 || blockType === 3)) damage = 10; 
+
+    // Creative mode = instant mine? Optional, but let's keep HP for now so you can use tools
+    if (flying) damage = 100; // Super strength when flying
 
     hitBlock.userData.hp -= damage;
     flashBlock(hitBlock);
@@ -269,15 +301,20 @@ document.addEventListener("mousedown", e => {
       scene.remove(hitBlock);
       blocks.splice(blocks.indexOf(hitBlock), 1);
     }
-  } else if (e.button === 2) {
+  } 
+  // PLACE
+  else if (e.button === 2) {
     if (selectedSlot <= 3 && inventory[selectedSlot] > 0) {
       const newPos = hitBlock.position.clone().add(hit.face.normal);
       const playerPos = camera.position.clone();
       playerPos.y -= 1.6;
       if (newPos.distanceTo(playerPos) < 1.0) return;
       createBlock(newPos.x, newPos.y, newPos.z, selectedSlot);
-      inventory[selectedSlot]--;
-      updateUI();
+      // If flying, don't use ammo (Creative mode style)
+      if (!flying) {
+        inventory[selectedSlot]--;
+        updateUI();
+      }
     }
   }
 });
@@ -301,7 +338,7 @@ function animate() {
   camera.rotation.x = pitch;
 
   // PHYSICS: MOVEMENT
-  const speed = sprint ? SPEED_SPRINT : SPEED_WALK;
+  const speed = flying ? SPEED_FLY : (sprint ? SPEED_SPRINT : SPEED_WALK);
   const dir = new THREE.Vector3();
   const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)).normalize();
   const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)).normalize();
@@ -311,13 +348,16 @@ function animate() {
   if (keys["KeyA"]) dir.sub(right);
   if (keys["KeyD"]) dir.add(right);
 
-  // PHYSICS: DYNAMIC FOV
-  // If moving, widen FOV slightly. If sprinting, widen a lot.
-  if (sprint && dir.length() > 0) targetFov = 85;
-  else if (dir.length() > 0) targetFov = 77;
+  // FLIGHT VERTICAL MOVEMENT
+  if (flying) {
+    if (keys["Space"]) camera.position.y += speed;
+    if (keys["ShiftLeft"]) camera.position.y -= speed;
+  }
+
+  // FOV EFFECTS
+  if (sprint && dir.length() > 0 && !flying) targetFov = 85;
+  else if (dir.length() > 0 && !flying) targetFov = 77;
   else targetFov = 75;
-  
-  // Smoothly change FOV (Linear Interpolation)
   camera.fov += (targetFov - camera.fov) * 0.1;
   camera.updateProjectionMatrix();
 
@@ -331,26 +371,32 @@ function animate() {
     }
   }
 
-  // PHYSICS: GRAVITY
-  if (!onGround) velocityY -= GRAVITY; 
-  camera.position.y += velocityY;
+  // GRAVITY
+  if (flying) {
+    velocityY = 0; // No gravity when flying
+  } else {
+    // Normal Gravity Logic
+    if (!onGround) velocityY -= GRAVITY; 
+    camera.position.y += velocityY;
 
-  downRay.set(camera.position, new THREE.Vector3(0, -1, 0));
-  const groundHits = downRay.intersectObjects(blocks);
-  if (groundHits.length > 0) {
-    const hit = groundHits[0];
-    if (hit.distance < 1.8 && velocityY <= 0) {
-      camera.position.y = hit.point.y + 1.8;
-      velocityY = 0;
-      onGround = true;
+    downRay.set(camera.position, new THREE.Vector3(0, -1, 0));
+    const groundHits = downRay.intersectObjects(blocks);
+    if (groundHits.length > 0) {
+      const hit = groundHits[0];
+      if (hit.distance < 1.8 && velocityY <= 0) {
+        camera.position.y = hit.point.y + 1.8;
+        velocityY = 0;
+        onGround = true;
+      } else {
+        onGround = false;
+      }
     } else {
       onGround = false;
     }
-  } else {
-    onGround = false;
   }
-  
-  if (camera.position.y < -20) {
+
+  // Fall off world check (Respawn or bounce if flight off)
+  if (camera.position.y < -20 && !flying) {
     camera.position.set(0, 10, 0);
     velocityY = 0;
   }
@@ -365,7 +411,6 @@ function animate() {
        item.position.y = Math.floor(item.position.y) + 0.5;
        item.userData.velocityY = 0;
     }
-    
     item.rotation.y += 0.05;
 
     if (camera.position.distanceTo(item.position) < 1.5) {
