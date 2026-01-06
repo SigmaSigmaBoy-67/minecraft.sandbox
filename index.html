@@ -216,38 +216,50 @@ document.addEventListener("mousemove", e => {
   pitch -= e.movementY * 0.002;
   pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
 });
+document.body.addEventListener("click", () => {
+  document.body.requestPointerLock();
+});
+
 document.addEventListener("mousedown", e => {
-  if (e.button !== 0) return;
-  // DROP if holding something
+  if (e.button !== 0) return; // Only Left Click
+
+  // 1. If holding an item, place/drop it
   if (heldItem) {
+    // Basic logic: just put it back in the scene where the camera is
+    // (You might want to improve this later to place against other blocks)
     scene.add(heldItem);
     heldItem = null;
     return;
   }
-  // PICK UP
+
+  // 2. If hands empty, Break Block
   raycaster.setFromCamera(mouse, camera);
   const hits = raycaster.intersectObjects(blocks);
-  if (hits.length === 0) return;
-  const hit = hits[0].object;
-  scene.remove(hit);
-  const i = blocks.indexOf(hit);
-  if (i !== -1) blocks.splice(i, 1);
-  heldItem = hit;
-});
-document.body.addEventListener("click", () => {
-  document.body.requestPointerLock();
-});
- 
-  const drop = hitBlock.clone();
+  
+  if (hits.length === 0) return; // Clicked air
+  
+  const hit = hits[0].object; // The block we hit
+  
+  // --- CREATE THE MINI DROP ITEM ---
+  const drop = hit.clone();
   drop.scale.set(0.4, 0.4, 0.4);
-  drop.position.copy(hitBlock.position);
-  drop.position.y += 0.7;
+  drop.position.copy(hit.position);
+  drop.position.y += 0.5; // Pop it up slightly
   drop.userData = {
     isDrop: true,
-    velocityY: 0
+    velocityY: 0.2 // Give it a little pop up jump
   };
   droppedItems.push(drop);
   scene.add(drop);
+
+  // --- REMOVE THE BIG BLOCK ---
+  scene.remove(hit);
+  const i = blocks.indexOf(hit);
+  if (i !== -1) blocks.splice(i, 1);
+  
+  // Note: I removed "heldItem = hit" because usually in MC 
+  // you break the block, it drops, and THEN you pick it up by walking over it.
+});
 });
 /* =========================
    GAME LOOP
