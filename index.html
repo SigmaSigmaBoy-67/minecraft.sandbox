@@ -2,12 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Minecraft Phase 13: True Restoration</title>
+<title>Minecraft Phase 14: Fixed</title>
 <style>
   body { margin: 0; overflow: hidden; background: #87ceeb; font-family: monospace; user-select: none; }
-  
-  /* UI LAYERS */
-  #game-ui { visibility: hidden; }
   
   #crosshair {
     position: fixed; top: 50%; left: 50%;
@@ -18,16 +15,15 @@
   }
 
   #ui-container {
-    position: fixed; bottom: 10px; left: 50%;
+    position: fixed; bottom: 20px; left: 50%;
     transform: translateX(-50%);
     text-align: center; pointer-events: none;
   }
 
-  /* HOTBAR */
   #hotbar {
     display: flex; gap: 4px; justify-content: center;
-    background: rgba(0,0,0,0.4); padding: 5px; border-radius: 5px;
-    border: 2px solid #333;
+    background: rgba(0,0,0,0.5); padding: 5px; border-radius: 5px;
+    border: 2px solid #333; pointer-events: auto;
   }
   
   .slot {
@@ -35,27 +31,20 @@
     border: 3px solid #373737;
     border-top: 3px solid #FFF; border-left: 3px solid #FFF;
     display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
   }
   .slot.selected { background: #bbb; border-color: white; }
   .slot-icon { width: 32px; height: 32px; image-rendering: pixelated; }
 
-  /* LOADING SCREEN */
-  #loading-screen {
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background: #111; z-index: 100;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
+  #controls {
+    position: fixed; top: 10px; left: 10px; color: white; 
+    text-shadow: 1px 1px 0 #000; font-weight: bold;
   }
-  #loading-text { color: white; font-size: 20px; margin-bottom: 20px; font-weight: bold; }
-  #progress-bar-box { width: 300px; height: 30px; border: 3px solid white; padding: 2px; }
-  #progress-bar { width: 0%; height: 100%; background: #4caf50; transition: width 0.1s; }
 </style>
 </head>
 <body>
 
-<div id="loading-screen">
-  <div id="loading-text">RESTORING TEXTURES... 0%</div>
-  <div id="progress-bar-box"><div id="progress-bar"></div></div>
-</div>
+<div id="controls">WASD: Move | SPACE: Jump | HOLD CLICK: Mine | 1-4: Select Block</div>
 
 <div id="game-ui">
   <div id="crosshair"></div>
@@ -65,16 +54,16 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
 
 <script>
-// --- CONFIGURATION ---
-const RENDER_DISTANCE = 6; 
-const SPEED = 0.1;
+// --- SETTINGS ---
+const RENDER_DISTANCE = 8; 
+const SPEED = 0.11;
 const JUMP = 0.22;
 const GRAVITY = 0.015;
 
-// --- SCENE SETUP ---
+// --- SCENE ---
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
-scene.fog = new THREE.Fog(0x87ceeb, 10, 50);
+scene.fog = new THREE.Fog(0x87ceeb, 10, 45);
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
 camera.rotation.order = "YXZ";
@@ -90,7 +79,7 @@ const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
 dirLight.position.set(20, 50, 10);
 scene.add(dirLight);
 
-// --- TEXTURE GENERATOR (The Good One) ---
+// --- TEXTURES ---
 const canvas = document.createElement("canvas");
 canvas.width = 16; canvas.height = 16;
 const ctx = canvas.getContext("2d");
@@ -115,7 +104,7 @@ function noise(ctx, colors) {
     }
 }
 
-// RESTORED TEXTURES
+// Textures
 const tGrassTop = createTexture(c => noise(c, ["#4caf50", "#388e3c"]));
 const tGrassSide = createTexture(c => { 
     noise(c, ["#795548", "#5d4037"]); 
@@ -129,6 +118,7 @@ const tWood = createTexture(c => {
 });
 const tLeaves = createTexture(c => noise(c, ["#2e7d32", "#1b5e20", "#4caf50"]));
 
+// Materials
 const materials = [
     [new THREE.MeshLambertMaterial({map:tGrassSide.tex}), new THREE.MeshLambertMaterial({map:tGrassSide.tex}), new THREE.MeshLambertMaterial({map:tGrassTop.tex}), new THREE.MeshLambertMaterial({map:tDirt.tex}), new THREE.MeshLambertMaterial({map:tGrassSide.tex}), new THREE.MeshLambertMaterial({map:tGrassSide.tex})], // 0: Grass
     new THREE.MeshLambertMaterial({map:tStone.tex}), // 1: Stone
@@ -136,83 +126,72 @@ const materials = [
     new THREE.MeshLambertMaterial({map:tLeaves.tex}) // 3: Leaves
 ];
 
-// --- WORLD DATA ---
+// --- WORLD ---
 const blocks = {};
 const boxGeo = new THREE.BoxGeometry(1,1,1);
 
 function spawn(x, y, z, type) {
     const key = `${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`;
     if(blocks[key]) return;
-    const mat = Array.isArray(materials[type]) ? materials[type] : materials[type];
+    
+    // Safety check for materials
+    let mat = materials[type];
+    if(Array.isArray(mat)) mat = mat.map(m => m.clone()); // Clone array mats
+    else mat = mat.clone();
+
     const mesh = new THREE.Mesh(boxGeo, mat);
     mesh.position.set(x, y, z);
-    mesh.userData = { type, key, hp: (type===1?60:20) };
+    mesh.userData = { type, key, hp: (type===1?40:15) }; // Stone harder than grass
     scene.add(mesh);
     blocks[key] = mesh;
 }
 
-// --- GENERATION LOOP ---
 function getHeight(x, z) {
-    return Math.floor(Math.sin(x/10)*3 + Math.cos(z/10)*3);
+    return Math.floor(Math.sin(x/12)*3 + Math.cos(z/12)*3);
 }
 
-// Initial Load
-let gX = -RENDER_DISTANCE, gZ = -RENDER_DISTANCE;
-function loadWorld() {
-    for(let i=0; i<50; i++) {
-        if(gX > RENDER_DISTANCE) { startGame(); return; }
-        const h = getHeight(gX, gZ);
-        // Simple Terrain
-        spawn(gX, h, gZ, 0); // Grass
-        spawn(gX, h-1, gZ, 1); // Stone
-        spawn(gX, h-2, gZ, 1); // Stone
-        
-        // Simple Trees
-        if(Math.random() < 0.05) {
-            spawn(gX, h+1, gZ, 2);
-            spawn(gX, h+2, gZ, 2);
-            spawn(gX, h+3, gZ, 3);
+function generateChunk(cx, cz) {
+    for(let x=cx-RENDER_DISTANCE; x<cx+RENDER_DISTANCE; x++) {
+        for(let z=cz-RENDER_DISTANCE; z<cz+RENDER_DISTANCE; z++) {
+            const h = getHeight(x,z);
+            // Only spawn if nothing exists at height
+            const k = `${x},${h},${z}`;
+            if(!blocks[k]) {
+                spawn(x, h, z, 0);   // Surface
+                spawn(x, h-1, z, 1); // Subsurface
+                spawn(x, h-2, z, 1);
+                
+                // Trees
+                if(Math.random() < 0.02) {
+                    spawn(x, h+1, z, 2);
+                    spawn(x, h+2, z, 2);
+                    spawn(x, h+3, z, 3); // Leaves
+                }
+            }
         }
-
-        gZ++; if(gZ > RENDER_DISTANCE) { gZ = -RENDER_DIST; gX++; }
     }
-    const pct = Math.floor(((gX + RENDER_DISTANCE) / (RENDER_DISTANCE*2)) * 100);
-    document.getElementById("progress-bar").style.width = pct + "%";
-    requestAnimationFrame(loadWorld);
 }
 
-// --- GAMEPLAY ---
-let isGameActive = false;
-function startGame() {
-    isGameActive = true;
-    document.getElementById("loading-screen").style.display = "none";
-    document.getElementById("game-ui").style.visibility = "visible";
-    camera.position.set(0, 10, 0);
-    animate();
-}
-
-// Physics Helpers
+// --- PHYSICS (AABB) ---
 function getBlock(x, y, z) {
     return blocks[`${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`];
 }
 
 function checkCollision(pos) {
-    const r = 0.3; // Player width radius
+    const r = 0.3; // Player radius
     const feet = pos.clone(); feet.y -= 1.6;
     const head = pos.clone();
     
-    // Check 8 corners around feet and head
     const offsets = [[r,r], [r,-r], [-r,r], [-r,-r]];
     for(let o of offsets) {
-        if(getBlock(feet.x+o[0], feet.y, feet.z+o[1])) return true;
-        if(getBlock(head.x+o[0], head.y, head.z+o[1])) return true;
-        // Check waist
-        if(getBlock(feet.x+o[0], feet.y+0.8, feet.z+o[1])) return true;
+        if(getBlock(feet.x+o[0], feet.y, feet.z+o[1])) return true; // Feet
+        if(getBlock(head.x+o[0], head.y, head.z+o[1])) return true; // Head
+        if(getBlock(feet.x+o[0], feet.y+0.8, feet.z+o[1])) return true; // Waist
     }
     return false;
 }
 
-// Controls
+// --- GAME LOOP ---
 const keys = {};
 let yaw = 0, pitch = 0;
 let velY = 0;
@@ -222,9 +201,18 @@ let selectedSlot = 0;
 let isMining = false;
 let miningProgress = 0;
 let miningTarget = null;
+const ray = new THREE.Raycaster();
 
-document.addEventListener("keydown", e => keys[e.code] = true);
+document.addEventListener("keydown", e => {
+    keys[e.code] = true;
+    if(e.key >= '1' && e.key <= '4') {
+        selectedSlot = parseInt(e.key)-1;
+        updateHotbar();
+    }
+});
 document.addEventListener("keyup", e => keys[e.code] = false);
+
+document.body.onclick = () => document.body.requestPointerLock();
 document.addEventListener("mousemove", e => {
     if(document.pointerLockElement) {
         yaw -= e.movementX * 0.002;
@@ -232,66 +220,68 @@ document.addEventListener("mousemove", e => {
         pitch = Math.max(-1.5, Math.min(1.5, pitch));
     }
 });
+
 document.addEventListener("mousedown", e => {
-    if(!document.pointerLockElement) document.body.requestPointerLock();
-    else if(e.button === 0) isMining = true;
-    else if(e.button === 2) placeBlock();
+    if(document.pointerLockElement) {
+        if(e.button === 0) isMining = true;
+        if(e.button === 2) placeBlock();
+    }
 });
 document.addEventListener("mouseup", () => {
     isMining = false; miningProgress = 0;
-    if(miningTarget) miningTarget.position.set(...miningTarget.userData.key.split(',').map(Number));
+    if(miningTarget) {
+        // Reset shake
+        const [tx, ty, tz] = miningTarget.userData.key.split(',').map(Number);
+        miningTarget.position.set(tx, ty, tz);
+        miningTarget = null;
+    }
 });
 
-// Main Loop
-const ray = new THREE.Raycaster();
+// Start Game
+camera.position.set(0, 8, 0);
+generateChunk(0,0); // Initial gen
+animate();
+
 function animate() {
     requestAnimationFrame(animate);
 
-    // 1. Look
+    // Look
     camera.rotation.set(pitch, yaw, 0);
 
-    // 2. Move (WASD)
+    // Move
     const move = new THREE.Vector3();
     if(keys["KeyW"]) move.z -= 1; if(keys["KeyS"]) move.z += 1;
     if(keys["KeyA"]) move.x -= 1; if(keys["KeyD"]) move.x += 1;
     move.applyAxisAngle(new THREE.Vector3(0,1,0), yaw).normalize().multiplyScalar(SPEED);
 
-    // X Collision
-    if(!checkCollision(new THREE.Vector3(camera.position.x + move.x, camera.position.y, camera.position.z))) {
+    // Collision X
+    if(!checkCollision(new THREE.Vector3(camera.position.x + move.x, camera.position.y, camera.position.z))) 
         camera.position.x += move.x;
-    }
-    // Z Collision
-    if(!checkCollision(new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z + move.z))) {
+    // Collision Z
+    if(!checkCollision(new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z + move.z))) 
         camera.position.z += move.z;
-    }
 
-    // 3. Gravity & Jump
+    // Gravity
     velY -= GRAVITY;
     const nextY = camera.position.y + velY;
     if(checkCollision(new THREE.Vector3(camera.position.x, nextY, camera.position.z))) {
-        if(velY < 0) { // Hit floor
-            velY = 0;
-            if(keys["Space"]) velY = JUMP;
-        } else { // Hit ceiling
-            velY = 0;
-        }
+        if(velY < 0 && keys["Space"]) velY = JUMP; // Jump if on ground
+        else velY = 0;
     } else {
         camera.position.y += velY;
     }
+    
+    if(camera.position.y < -20) camera.position.set(0, 15, 0); // Void reset
 
-    // Void floor
-    if(camera.position.y < -20) camera.position.set(0, 20, 0);
-
-    // 4. Mining Logic
+    // Mining Logic
     if(isMining) {
         ray.setFromCamera(new THREE.Vector2(), camera);
         const hits = ray.intersectObjects(Object.values(blocks));
-        if(hits.length > 0 && hits[0].distance < 4) {
+        if(hits.length > 0 && hits[0].distance < 4.5) {
             miningTarget = hits[0].object;
             miningProgress++;
-            // Shake Visual
-            miningTarget.position.x = Number(miningTarget.userData.key.split(',')[0]) + (Math.random()-0.5)*0.1;
-            miningTarget.position.y = Number(miningTarget.userData.key.split(',')[1]) + (Math.random()-0.5)*0.1;
+            // Shake
+            miningTarget.position.x += (Math.random()-0.5)*0.05;
             
             if(miningProgress > miningTarget.userData.hp) {
                 scene.remove(miningTarget);
@@ -302,48 +292,45 @@ function animate() {
         }
     }
 
-    // 5. Infinite World Update (Every frame check? No, random check for performance)
-    if(Math.random() < 0.1) {
-        const cx = Math.floor(camera.position.x);
-        const cz = Math.floor(camera.position.z);
-        // Only checking immediate area to save frames
-        for(let x=cx-RENDER_DISTANCE; x<cx+RENDER_DISTANCE; x++) {
-            for(let z=cz-RENDER_DISTANCE; z<cz+RENDER_DISTANCE; z++) {
-                if(!blocks[`${x},${getHeight(x,z)},${z}`]) {
-                    const h = getHeight(x,z);
-                    spawn(x, h, z, 0); spawn(x, h-1, z, 1);
-                }
-            }
-        }
+    // Dynamic World (Simple)
+    if(Math.random() < 0.05) {
+        generateChunk(Math.floor(camera.position.x), Math.floor(camera.position.z));
     }
-
+    
     renderer.render(scene, camera);
 }
 
 function placeBlock() {
     ray.setFromCamera(new THREE.Vector2(), camera);
     const hits = ray.intersectObjects(Object.values(blocks));
-    if(hits.length > 0 && hits[0].distance < 4) {
-        const p = hits[0].object.position.clone().add(hits[0].face.normal);
-        // Don't place in self
-        if(p.distanceTo(camera.position) > 1.5) spawn(p.x, p.y, p.z, selectedSlot);
+    if(hits.length > 0 && hits[0].distance < 4.5) {
+        const p = hits[0].point.add(hits[0].face.normal.multiplyScalar(0.5)).floor();
+        // Check player collision before placing
+        if(p.distanceTo(camera.position) > 1.2) {
+             spawn(p.x, p.y, p.z, selectedSlot);
+        }
     }
 }
 
-// UI Init
-const items = [tGrassSide, tStone, tWood, tLeaves];
-items.forEach((t, i) => {
-    document.getElementById("hotbar").innerHTML += 
-    `<div class="slot ${i===0?'selected':''}" onclick="selectedSlot=${i}"><img src="${t.icon}" class="slot-icon"></div>`;
-});
-document.addEventListener("keydown", e => {
-    if(e.key >= '1' && e.key <= '4') {
-        selectedSlot = parseInt(e.key)-1;
-        document.querySelectorAll(".slot").forEach((s,i) => s.className = `slot ${i===selectedSlot?'selected':''}`);
-    }
+// UI Setup
+const hot = document.getElementById("hotbar");
+const itemIcons = [tGrassSide.icon, tStone.icon, tWood.icon, tLeaves.icon];
+itemIcons.forEach((icon, i) => {
+    hot.innerHTML += `<div class="slot ${i===0?'selected':''}" onclick="selectedSlot=${i}; updateHotbar()"><img src="${icon}" class="slot-icon"></div>`;
 });
 
-loadWorld();
+function updateHotbar() {
+    document.querySelectorAll(".slot").forEach((el, i) => {
+        el.className = `slot ${i===selectedSlot?'selected':''}`;
+    });
+}
+
+// Resize
+window.onresize = () => {
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+};
 </script>
 </body>
 </html>
