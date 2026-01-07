@@ -2,24 +2,28 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Minecraft Phase 16: Deep & Optimized</title>
+<title>Minecraft Phase 17: Silent & Stable</title>
 <style>
   body { margin: 0; overflow: hidden; background: #87ceeb; font-family: monospace; user-select: none; }
   
   /* CROSSHAIR */
   #crosshair {
-    position: fixed; top: 50%; left: 50%; width: 14px; height: 14px;
-    margin-left: -7px; margin-top: -7px; border: 2px solid white; border-radius: 50%;
-    pointer-events: none; z-index: 10;
+    position: fixed; top: 50%; left: 50%; width: 16px; height: 16px;
+    margin-left: -8px; margin-top: -8px; 
+    background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAIklEQVQIW2NkQAKrVq36zwjjgzhQwVOnTv3HCOLAcOAFAQA7Ewzpzs+d7wAAAABJRU5ErkJggg==');
+    background-size: 100% 100%;
+    image-rendering: pixelated;
+    opacity: 0.8;
+    z-index: 10;
   }
 
   /* HAND ANIMATION */
   #hand-container {
-    position: fixed; bottom: 0; right: 20%; width: 240px; height: 240px;
+    position: fixed; bottom: 0; right: 20%; width: 220px; height: 220px;
     pointer-events: none; transform-origin: bottom right; transition: transform 0.1s;
   }
   #hand-img { width: 100%; height: 100%; image-rendering: pixelated; }
-  .swing { animation: swingAnim 0.2s ease-in-out; }
+  .swing { animation: swingAnim 0.15s ease-in-out; }
   @keyframes swingAnim { 0% { transform: rotate(0deg); } 50% { transform: rotate(-45deg) translateY(30px); } 100% { transform: rotate(0deg); } }
 
   /* HUD */
@@ -34,7 +38,7 @@
   }
   
   .slot {
-    width: 50px; height: 50px; background: #8b8b8b; 
+    width: 48px; height: 48px; background: #8b8b8b; 
     border: 3px solid #373737; border-top-color: #fff; border-left-color: #fff;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     position: relative; cursor: pointer;
@@ -43,7 +47,7 @@
   .slot-icon { width: 32px; height: 32px; image-rendering: pixelated; }
   .count {
     position: absolute; bottom: 2px; right: 2px; 
-    font-size: 16px; color: white; text-shadow: 2px 2px 0 #000; font-weight: bold;
+    font-size: 14px; color: white; text-shadow: 2px 2px 0 #000; font-weight: bold;
   }
   
   #controls {
@@ -68,27 +72,29 @@
 
 <script>
 // --- CONFIGURATION ---
-const RENDER_DIST = 6;     // Reduced slightly to prevent chirping/lag
+const RENDER_DIST = 5;     // Lower render distance = Less lag
 const CHUNK_SIZE = 16;
 const GRAVITY = 0.015;
 const JUMP = 0.22;
 const SPEED = 0.12;
+const FPS_LIMIT = 60;      // Fixes the chirping
 
 // --- INIT THREE.JS ---
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
-scene.fog = new THREE.Fog(0x87ceeb, 10, 40); // Fog hides the edge
+scene.fog = new THREE.Fog(0x87ceeb, 10, 35); // Hides loading edges
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
 camera.rotation.order = "YXZ";
 
-const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+// Removed "high-performance" preference to reduce coil whine strain
+const renderer = new THREE.WebGLRenderer({ antialias: false });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Limit pixel ratio for performance
+renderer.setPixelRatio(1); // Force 1x pixel ratio for performance
 document.body.appendChild(renderer.domElement);
 
 // Lighting
-const ambient = new THREE.AmbientLight(0xffffff, 0.7);
+const ambient = new THREE.AmbientLight(0xffffff, 0.6);
 scene.add(ambient);
 const sun = new THREE.DirectionalLight(0xffffff, 0.6);
 sun.position.set(50, 100, 50);
@@ -129,17 +135,17 @@ const tPickaxe = makeTex(["rgba(0,0,0,0)"], c => {
 });
 
 const MATERIALS = [
-    [new THREE.MeshLambertMaterial({map:tGrassSide.tex}), new THREE.MeshLambertMaterial({map:tGrassSide.tex}), new THREE.MeshLambertMaterial({map:tGrassTop.tex}), new THREE.MeshLambertMaterial({map:tDirt.tex}), new THREE.MeshLambertMaterial({map:tGrassSide.tex}), new THREE.MeshLambertMaterial({map:tGrassSide.tex})], // 0: Grass
-    new THREE.MeshLambertMaterial({map:tStone.tex}), // 1: Stone
-    new THREE.MeshLambertMaterial({map:tWood.tex}), // 2: Wood
-    new THREE.MeshLambertMaterial({map:tLeaves.tex}), // 3: Leaves
-    new THREE.MeshLambertMaterial({map:tDirt.tex}), // 4: Dirt
-    new THREE.MeshLambertMaterial({map:tBedrock.tex}) // 5: Bedrock
+    [new THREE.MeshLambertMaterial({map:tGrassSide.tex}), new THREE.MeshLambertMaterial({map:tGrassSide.tex}), new THREE.MeshLambertMaterial({map:tGrassTop.tex}), new THREE.MeshLambertMaterial({map:tDirt.tex}), new THREE.MeshLambertMaterial({map:tGrassSide.tex}), new THREE.MeshLambertMaterial({map:tGrassSide.tex})], 
+    new THREE.MeshLambertMaterial({map:tStone.tex}), 
+    new THREE.MeshLambertMaterial({map:tWood.tex}), 
+    new THREE.MeshLambertMaterial({map:tLeaves.tex}), 
+    new THREE.MeshLambertMaterial({map:tDirt.tex}), 
+    new THREE.MeshLambertMaterial({map:tBedrock.tex}) 
 ];
 
 // --- WORLD DATA ---
 const blocks = {}; 
-const worldMap = new Map(); // Tracks coordinate to type
+const worldMap = new Map();
 const boxGeo = new THREE.BoxGeometry(1,1,1);
 
 // Inventory
@@ -170,10 +176,10 @@ function updateHand() { document.getElementById("hand-img").src = INVENTORY[sele
 // --- GENERATION ENGINE ---
 function spawnBlock(x, y, z, type) {
     const key = `${x},${y},${z}`;
-    if(worldMap.has(key)) return; // Already exists or deleted
+    if(worldMap.has(key)) return; 
     worldMap.set(key, type);
     
-    if(type === -1) return; // Air
+    if(type === -1) return; 
 
     const mesh = new THREE.Mesh(boxGeo, MATERIALS[type]);
     mesh.position.set(x, y, z);
@@ -187,7 +193,7 @@ function getTerrainHeight(x, z) {
 }
 
 function generateTree(x, y, z) {
-    for(let i=0; i<5; i++) spawnBlock(x, y+i, z, 2); // Trunk
+    for(let i=0; i<5; i++) spawnBlock(x, y+i, z, 2);
     for(let ly=y+3; ly<=y+5; ly++) {
         for(let lx=x-2; lx<=x+2; lx++) {
             for(let lz=z-2; lz<=z+2; lz++) {
@@ -200,9 +206,7 @@ function generateTree(x, y, z) {
     }
 }
 
-// "Chunk" tracking to prevent re-generating same area constantly
 const generatedChunks = new Set();
-
 function generateChunk(cx, cz) {
     const key = `${cx},${cz}`;
     if(generatedChunks.has(key)) return;
@@ -211,40 +215,10 @@ function generateChunk(cx, cz) {
     for(let x=cx; x<cx+CHUNK_SIZE; x++) {
         for(let z=cz; z<cz+CHUNK_SIZE; z++) {
             const h = getTerrainHeight(x, z);
-            
-            // Bedrock Floor (DEEP)
-            spawnBlock(x, -16, z, 5);
-
-            // Fill Stone/Dirt from -15 up to Height
-            for(let y=-15; y < h; y++) {
-                if(y < h - 3) spawnBlock(x, y, z, 1); // Stone deep down
-                else spawnBlock(x, y, z, 4); // Dirt near top
-            }
-
-            // Surface (Always Grass)
-            spawnBlock(x, h, z, 0);
-
-            // Trees
+            spawnBlock(x, -16, z, 5); // Bedrock
+            for(let y=-15; y < h; y++) spawnBlock(x, y, z, y < h-3 ? 1 : 4);
+            spawnBlock(x, h, z, 0); // Grass Surface
             if(Math.random() < 0.01) generateTree(x, h+1, z);
-        }
-    }
-}
-
-// --- GAME LOOP ---
-let lastGenTime = 0;
-function updateWorld() {
-    // Only check generation every 500ms to stop glitching/chirping
-    const now = performance.now();
-    if(now - lastGenTime < 500) return;
-    lastGenTime = now;
-
-    const px = Math.floor(camera.position.x / CHUNK_SIZE) * CHUNK_SIZE;
-    const pz = Math.floor(camera.position.z / CHUNK_SIZE) * CHUNK_SIZE;
-
-    // Generate 3x3 grid of chunks around player
-    for(let x = px - CHUNK_SIZE; x <= px + CHUNK_SIZE; x += CHUNK_SIZE) {
-        for(let z = pz - CHUNK_SIZE; z <= pz + CHUNK_SIZE; z += CHUNK_SIZE) {
-            generateChunk(x, z);
         }
     }
 }
@@ -258,14 +232,16 @@ const ray = new THREE.Raycaster();
 function getBlock(x,y,z) { return blocks[`${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`] ? true : false; }
 
 function checkCollision(pos) {
-    const r = 0.3;
+    const r = 0.35; // Wider Hitbox
     const feet = pos.clone(); feet.y -= 1.6;
-    const head = pos.clone();
+    const head = pos.clone(); 
+    
     const offsets = [[r,r], [r,-r], [-r,r], [-r,-r], [0,0]];
     for(let o of offsets) {
+        // Precise integer checking
         if(getBlock(feet.x+o[0], feet.y, feet.z+o[1])) return true;
         if(getBlock(head.x+o[0], head.y, head.z+o[1])) return true;
-        if(getBlock(head.x+o[0], head.y-0.8, head.z+o[1])) return true; // Waist
+        if(getBlock(head.x+o[0], head.y-0.8, head.z+o[1])) return true;
     }
     return false;
 }
@@ -277,7 +253,6 @@ document.addEventListener("mousemove", e => { if(document.pointerLockElement) { 
 document.addEventListener("mousedown", e => { 
     if(!document.pointerLockElement) document.body.requestPointerLock();
     else {
-        // Swing
         const el = document.getElementById("hand-container");
         el.classList.remove("swing"); void el.offsetWidth; el.classList.add("swing");
         if(e.button===0) isMining=true; 
@@ -290,11 +265,31 @@ document.addEventListener("mouseup", () => { isMining=false; miningProgress=0; i
 camera.position.set(0, 10, 0);
 generateChunk(0,0);
 updateHUD(); updateHand();
-animate();
 
-function animate() {
+// --- FPS LOOP ---
+const clock = new THREE.Clock();
+const timeStep = 1/60;
+let accumulator = 0;
+let lastTime = 0;
+
+function animate(time) {
     requestAnimationFrame(animate);
-    updateWorld(); // Throttled generation
+    
+    // FPS CAP LOGIC
+    const ms = time - lastTime;
+    lastTime = time;
+    if(ms < 1000/FPS_LIMIT) return; // Skip frame if too fast
+
+    // WORLD GEN (Throttled)
+    if(Math.random() < 0.1) {
+        const px = Math.floor(camera.position.x / CHUNK_SIZE) * CHUNK_SIZE;
+        const pz = Math.floor(camera.position.z / CHUNK_SIZE) * CHUNK_SIZE;
+        for(let x = px - CHUNK_SIZE; x <= px + CHUNK_SIZE; x += CHUNK_SIZE) {
+            for(let z = pz - CHUNK_SIZE; z <= pz + CHUNK_SIZE; z += CHUNK_SIZE) {
+                generateChunk(x, z);
+            }
+        }
+    }
 
     camera.rotation.set(pitch, yaw, 0);
 
@@ -314,12 +309,13 @@ function animate() {
 
     if(camera.position.y < -30) camera.position.set(0, 20, 0);
 
+    // MINING
     if(isMining) {
-        ray.setFromCamera(new THREE.Vector2(), camera);
+        ray.setFromCamera(new THREE.Vector2(0,0), camera); // CENTER OF SCREEN
         const hits = ray.intersectObjects(Object.values(blocks));
         if(hits.length > 0 && hits[0].distance < 5) {
             miningTarget = hits[0].object;
-            if(miningTarget.userData.type === 5) return; // Cannot break Bedrock
+            if(miningTarget.userData.type === 5) return; 
             miningProgress++;
             miningTarget.position.x += (Math.random()-0.5)*0.05; 
             miningTarget.position.y += (Math.random()-0.5)*0.05;
@@ -329,9 +325,7 @@ function animate() {
                 scene.remove(miningTarget);
                 delete blocks[key];
                 worldMap.set(key, -1);
-                
-                // Add to inventory
-                let drop = type === 0 ? 4 : type; // Grass drops dirt
+                let drop = type === 0 ? 4 : type; 
                 const item = INVENTORY.find(i=>i.id===drop);
                 if(item) { item.count++; updateHUD(); }
                 miningTarget=null; miningProgress=0;
@@ -341,11 +335,12 @@ function animate() {
 
     renderer.render(scene, camera);
 }
+requestAnimationFrame(animate);
 
 function placeBlock() {
     const item = INVENTORY[selectedSlot];
     if(item.id === 99 || item.count <= 0) return;
-    ray.setFromCamera(new THREE.Vector2(), camera);
+    ray.setFromCamera(new THREE.Vector2(0,0), camera); // CENTER OF SCREEN
     const hits = ray.intersectObjects(Object.values(blocks));
     if(hits.length > 0 && hits[0].distance < 5) {
         const p = hits[0].point.add(hits[0].face.normal.multiplyScalar(0.5)).floor();
