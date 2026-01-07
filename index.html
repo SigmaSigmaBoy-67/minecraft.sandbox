@@ -2,11 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Minecraft Phase 15: Survival Mode</title>
+<title>Minecraft Phase 16: Deep & Optimized</title>
 <style>
   body { margin: 0; overflow: hidden; background: #87ceeb; font-family: monospace; user-select: none; }
   
-  /* UI OVERLAYS */
+  /* CROSSHAIR */
   #crosshair {
     position: fixed; top: 50%; left: 50%; width: 14px; height: 14px;
     margin-left: -7px; margin-top: -7px; border: 2px solid white; border-radius: 50%;
@@ -15,12 +15,12 @@
 
   /* HAND ANIMATION */
   #hand-container {
-    position: fixed; bottom: 0; right: 20%; width: 200px; height: 200px;
+    position: fixed; bottom: 0; right: 20%; width: 240px; height: 240px;
     pointer-events: none; transform-origin: bottom right; transition: transform 0.1s;
   }
   #hand-img { width: 100%; height: 100%; image-rendering: pixelated; }
   .swing { animation: swingAnim 0.2s ease-in-out; }
-  @keyframes swingAnim { 0% { transform: rotate(0deg); } 50% { transform: rotate(-45deg) translateY(20px); } 100% { transform: rotate(0deg); } }
+  @keyframes swingAnim { 0% { transform: rotate(0deg); } 50% { transform: rotate(-45deg) translateY(30px); } 100% { transform: rotate(0deg); } }
 
   /* HUD */
   #ui-container {
@@ -55,7 +55,7 @@
 </head>
 <body>
 
-<div id="controls">WASD: Move | SPACE: Jump | HOLD CLICK: Mine | RIGHT CLICK: Place | 1-6: Inventory</div>
+<div id="controls">WASD: Move | SPACE: Jump | HOLD CLICK: Mine | RIGHT CLICK: Place | 1-6: Items</div>
 <div id="crosshair"></div>
 
 <div id="hand-container"><img id="hand-img" src=""></div>
@@ -67,39 +67,40 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
 
 <script>
-// --- CONFIG ---
-const RENDER_DIST = 8;
-const SPEED = 0.11;
-const JUMP = 0.22;
+// --- CONFIGURATION ---
+const RENDER_DIST = 6;     // Reduced slightly to prevent chirping/lag
+const CHUNK_SIZE = 16;
 const GRAVITY = 0.015;
+const JUMP = 0.22;
+const SPEED = 0.12;
 
 // --- INIT THREE.JS ---
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
-scene.fog = new THREE.Fog(0x87ceeb, 15, 50);
+scene.fog = new THREE.Fog(0x87ceeb, 10, 40); // Fog hides the edge
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
 camera.rotation.order = "YXZ";
 
-const renderer = new THREE.WebGLRenderer({ antialias: false });
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(1);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Limit pixel ratio for performance
 document.body.appendChild(renderer.domElement);
 
-const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+// Lighting
+const ambient = new THREE.AmbientLight(0xffffff, 0.7);
 scene.add(ambient);
-const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+const sun = new THREE.DirectionalLight(0xffffff, 0.6);
 sun.position.set(50, 100, 50);
 scene.add(sun);
 
-// --- TEXTURE SYSTEM ---
+// --- TEXTURE GENERATOR ---
 const canvas = document.createElement("canvas");
 canvas.width = 16; canvas.height = 16;
 const ctx = canvas.getContext("2d");
 
 function makeTex(colors, drawFn) {
     ctx.clearRect(0,0,16,16);
-    // Noise base
     for(let i=0; i<256; i++) {
         ctx.fillStyle = colors[Math.floor(Math.random()*colors.length)];
         ctx.fillRect(i%16, Math.floor(i/16), 1, 1);
@@ -121,16 +122,13 @@ const tDirt = makeTex(["#795548", "#5d4037"]);
 const tStone = makeTex(["#9e9e9e", "#757575", "#616161"]);
 const tWood = makeTex(["#5d4037", "#4e342e"], c => { c.fillStyle="#3e2723"; c.fillRect(4,0,2,16); c.fillRect(10,0,2,16); });
 const tLeaves = makeTex(["#2e7d32", "#1b5e20", "#4caf50"]);
-const tBedrock = makeTex(["#111", "#000"]);
+const tBedrock = makeTex(["#111", "#000", "#222"]);
 const tPickaxe = makeTex(["rgba(0,0,0,0)"], c => {
-    c.fillStyle = "#555";
-    c.fillRect(4,4,8,2); c.fillRect(6,2,4,6); // head
-    c.fillStyle = "#8d6e63"; 
-    c.fillRect(7,6,2,8); // handle
+    c.fillStyle = "#555"; c.fillRect(4,4,8,2); c.fillRect(6,2,4,6); 
+    c.fillStyle = "#8d6e63"; c.fillRect(7,6,2,8);
 });
 
-// Materials map
-const MATS = [
+const MATERIALS = [
     [new THREE.MeshLambertMaterial({map:tGrassSide.tex}), new THREE.MeshLambertMaterial({map:tGrassSide.tex}), new THREE.MeshLambertMaterial({map:tGrassTop.tex}), new THREE.MeshLambertMaterial({map:tDirt.tex}), new THREE.MeshLambertMaterial({map:tGrassSide.tex}), new THREE.MeshLambertMaterial({map:tGrassSide.tex})], // 0: Grass
     new THREE.MeshLambertMaterial({map:tStone.tex}), // 1: Stone
     new THREE.MeshLambertMaterial({map:tWood.tex}), // 2: Wood
@@ -139,21 +137,21 @@ const MATS = [
     new THREE.MeshLambertMaterial({map:tBedrock.tex}) // 5: Bedrock
 ];
 
-// --- GAME DATA ---
-const blocks = {}; // Stores meshes
-const worldData = {}; // Stores types (to prevent respawn)
+// --- WORLD DATA ---
+const blocks = {}; 
+const worldMap = new Map(); // Tracks coordinate to type
 const boxGeo = new THREE.BoxGeometry(1,1,1);
 
-// Inventory: [Grass, Stone, Wood, Leaves, Dirt, Pickaxe]
+// Inventory
 const INVENTORY = [
     { id: 0, name: "Grass", count: 0, icon: tGrassSide.url },
     { id: 1, name: "Stone", count: 0, icon: tStone.url },
     { id: 2, name: "Wood",  count: 0, icon: tWood.url },
     { id: 3, name: "Leaves",count: 0, icon: tLeaves.url },
     { id: 4, name: "Dirt",  count: 0, icon: tDirt.url },
-    { id: 99,name: "Pick",  count: 1, icon: tPickaxe.url } // Infinite tool
+    { id: 99,name: "Pick",  count: 1, icon: tPickaxe.url } 
 ];
-let selectedSlot = 5; // Start with pickaxe
+let selectedSlot = 5;
 
 function updateHUD() {
     const bar = document.getElementById("hotbar");
@@ -167,257 +165,198 @@ function updateHUD() {
         bar.appendChild(div);
     });
 }
+function updateHand() { document.getElementById("hand-img").src = INVENTORY[selectedSlot].icon; }
 
-function updateHand() {
-    const img = document.getElementById("hand-img");
-    img.src = INVENTORY[selectedSlot].icon;
-}
-
-// --- WORLD GENERATION ---
+// --- GENERATION ENGINE ---
 function spawnBlock(x, y, z, type) {
     const key = `${x},${y},${z}`;
-    if(worldData[key] !== undefined) return; // Already generated or deleted
+    if(worldMap.has(key)) return; // Already exists or deleted
+    worldMap.set(key, type);
     
-    worldData[key] = type;
     if(type === -1) return; // Air
 
-    const mesh = new THREE.Mesh(boxGeo, Array.isArray(MATS[type]) ? MATS[type] : MATS[type]);
+    const mesh = new THREE.Mesh(boxGeo, MATERIALS[type]);
     mesh.position.set(x, y, z);
-    mesh.userData = { key, type, hp: (type===1 ? 40 : 15) };
+    mesh.userData = { key, type, hp: (type===1?40:15) };
     scene.add(mesh);
     blocks[key] = mesh;
 }
 
+function getTerrainHeight(x, z) {
+    return Math.floor(Math.sin(x/15)*4 + Math.cos(z/15)*4);
+}
+
 function generateTree(x, y, z) {
-    // Trunk
-    for(let i=0; i<5; i++) spawnBlock(x, y+i, z, 2);
-    // Leaves
+    for(let i=0; i<5; i++) spawnBlock(x, y+i, z, 2); // Trunk
     for(let ly=y+3; ly<=y+5; ly++) {
         for(let lx=x-2; lx<=x+2; lx++) {
             for(let lz=z-2; lz<=z+2; lz++) {
-                if(Math.abs(lx-x)+Math.abs(lz-z) < 3 && worldData[`${lx},${ly},${lz}`] === undefined) {
-                    spawnBlock(lx, ly, lz, 3);
+                if(Math.abs(lx-x) + Math.abs(lz-z) < 3) {
+                    const k = `${lx},${ly},${lz}`;
+                    if(!worldMap.has(k)) spawnBlock(lx, ly, lz, 3);
                 }
             }
         }
     }
 }
 
-function getHeight(x, z) {
-    return Math.floor(Math.sin(x/15)*4 + Math.cos(z/15)*4);
-}
-
+// "Chunk" tracking to prevent re-generating same area constantly
 const generatedChunks = new Set();
+
 function generateChunk(cx, cz) {
-    const chunkKey = `${cx},${cz}`;
-    if(generatedChunks.has(chunkKey)) return;
-    generatedChunks.add(chunkKey);
+    const key = `${cx},${cz}`;
+    if(generatedChunks.has(key)) return;
+    generatedChunks.add(key);
 
-    for(let x=cx; x<cx+16; x++) {
-        for(let z=cz; z<cz+16; z++) {
-            const h = getHeight(x, z);
+    for(let x=cx; x<cx+CHUNK_SIZE; x++) {
+        for(let z=cz; z<cz+CHUNK_SIZE; z++) {
+            const h = getTerrainHeight(x, z);
             
-            // Bedrock
-            spawnBlock(x, -5, z, 5);
+            // Bedrock Floor (DEEP)
+            spawnBlock(x, -16, z, 5);
 
-            // Stone up to height
-            for(let y=-4; y<h; y++) spawnBlock(x, y, z, 1);
-            
-            // Surface
+            // Fill Stone/Dirt from -15 up to Height
+            for(let y=-15; y < h; y++) {
+                if(y < h - 3) spawnBlock(x, y, z, 1); // Stone deep down
+                else spawnBlock(x, y, z, 4); // Dirt near top
+            }
+
+            // Surface (Always Grass)
             spawnBlock(x, h, z, 0);
 
-            // Trees (rare)
-            if(Math.random() < 0.015) generateTree(x, h+1, z);
+            // Trees
+            if(Math.random() < 0.01) generateTree(x, h+1, z);
         }
     }
 }
 
-// --- PHYSICS ---
-function getBlock(x, y, z) {
-    const k = `${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`;
-    return blocks[k] ? true : false;
+// --- GAME LOOP ---
+let lastGenTime = 0;
+function updateWorld() {
+    // Only check generation every 500ms to stop glitching/chirping
+    const now = performance.now();
+    if(now - lastGenTime < 500) return;
+    lastGenTime = now;
+
+    const px = Math.floor(camera.position.x / CHUNK_SIZE) * CHUNK_SIZE;
+    const pz = Math.floor(camera.position.z / CHUNK_SIZE) * CHUNK_SIZE;
+
+    // Generate 3x3 grid of chunks around player
+    for(let x = px - CHUNK_SIZE; x <= px + CHUNK_SIZE; x += CHUNK_SIZE) {
+        for(let z = pz - CHUNK_SIZE; z <= pz + CHUNK_SIZE; z += CHUNK_SIZE) {
+            generateChunk(x, z);
+        }
+    }
 }
 
+// --- PHYSICS & CONTROLS ---
+const keys = {};
+let yaw = 0, pitch = 0, velY = 0;
+let isMining = false, miningProgress = 0, miningTarget = null;
+const ray = new THREE.Raycaster();
+
+function getBlock(x,y,z) { return blocks[`${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`] ? true : false; }
+
 function checkCollision(pos) {
-    const r = 0.3; 
+    const r = 0.3;
     const feet = pos.clone(); feet.y -= 1.6;
     const head = pos.clone();
-    const mid = pos.clone(); mid.y -= 0.8;
-    
     const offsets = [[r,r], [r,-r], [-r,r], [-r,-r], [0,0]];
     for(let o of offsets) {
         if(getBlock(feet.x+o[0], feet.y, feet.z+o[1])) return true;
-        if(getBlock(mid.x+o[0], mid.y, mid.z+o[1])) return true;
         if(getBlock(head.x+o[0], head.y, head.z+o[1])) return true;
+        if(getBlock(head.x+o[0], head.y-0.8, head.z+o[1])) return true; // Waist
     }
     return false;
 }
 
-// --- GAMEPLAY LOOP ---
-const keys = {};
-let yaw = 0, pitch = 0;
-let velY = 0;
-
-// Mining
-let isMining = false;
-let miningProgress = 0;
-let miningTarget = null;
-const ray = new THREE.Raycaster();
-
-document.addEventListener("keydown", e => {
-    keys[e.code] = true;
-    if(e.key >= '1' && e.key <= '6') {
-        selectedSlot = parseInt(e.key)-1;
-        updateHUD(); updateHand();
-    }
-});
-document.addEventListener("keyup", e => keys[e.code] = false);
-
-document.addEventListener("mousedown", e => {
+// Inputs
+document.addEventListener("keydown", e => { keys[e.code]=true; if(e.key>='1'&&e.key<='6'){selectedSlot=parseInt(e.key)-1;updateHUD();updateHand();} });
+document.addEventListener("keyup", e => keys[e.code]=false);
+document.addEventListener("mousemove", e => { if(document.pointerLockElement) { yaw-=e.movementX*0.002; pitch-=e.movementY*0.002; pitch=Math.max(-1.5, Math.min(1.5, pitch)); } });
+document.addEventListener("mousedown", e => { 
     if(!document.pointerLockElement) document.body.requestPointerLock();
     else {
-        // Swing animation
-        const hand = document.getElementById("hand-container");
-        hand.classList.remove("swing");
-        void hand.offsetWidth; // trigger reflow
-        hand.classList.add("swing");
-
-        if(e.button === 0) isMining = true;
-        if(e.button === 2) placeBlock();
+        // Swing
+        const el = document.getElementById("hand-container");
+        el.classList.remove("swing"); void el.offsetWidth; el.classList.add("swing");
+        if(e.button===0) isMining=true; 
+        if(e.button===2) placeBlock();
     }
 });
+document.addEventListener("mouseup", () => { isMining=false; miningProgress=0; if(miningTarget){ miningTarget.position.set(...miningTarget.userData.key.split(',').map(Number)); miningTarget=null; }});
 
-document.addEventListener("mouseup", () => {
-    isMining = false; miningProgress = 0;
-    if(miningTarget) {
-        // Reset shake position
-        const [tx, ty, tz] = miningTarget.userData.key.split(',').map(Number);
-        miningTarget.position.set(tx, ty, tz);
-        miningTarget = null;
-    }
-});
-
-document.addEventListener("mousemove", e => {
-    if(document.pointerLockElement) {
-        yaw -= e.movementX * 0.002;
-        pitch -= e.movementY * 0.002;
-        pitch = Math.max(-1.5, Math.min(1.5, pitch));
-    }
-});
-
-// START
+// Start
 camera.position.set(0, 10, 0);
-generateChunk(-8, -8);
-updateHUD();
-updateHand();
+generateChunk(0,0);
+updateHUD(); updateHand();
 animate();
 
 function animate() {
     requestAnimationFrame(animate);
+    updateWorld(); // Throttled generation
 
     camera.rotation.set(pitch, yaw, 0);
 
-    // MOVE
     const move = new THREE.Vector3();
-    if(keys["KeyW"]) move.z -= 1; if(keys["KeyS"]) move.z += 1;
-    if(keys["KeyA"]) move.x -= 1; if(keys["KeyD"]) move.x += 1;
+    if(keys["KeyW"]) move.z-=1; if(keys["KeyS"]) move.z+=1;
+    if(keys["KeyA"]) move.x-=1; if(keys["KeyD"]) move.x+=1;
     move.applyAxisAngle(new THREE.Vector3(0,1,0), yaw).normalize().multiplyScalar(SPEED);
 
-    if(!checkCollision(new THREE.Vector3(camera.position.x+move.x, camera.position.y, camera.position.z)))
-        camera.position.x += move.x;
-    if(!checkCollision(new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z+move.z)))
-        camera.position.z += move.z;
+    if(!checkCollision(new THREE.Vector3(camera.position.x+move.x, camera.position.y, camera.position.z))) camera.position.x+=move.x;
+    if(!checkCollision(new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z+move.z))) camera.position.z+=move.z;
 
-    // GRAVITY
     velY -= GRAVITY;
     const nextY = camera.position.y + velY;
     if(checkCollision(new THREE.Vector3(camera.position.x, nextY, camera.position.z))) {
-        if(velY < 0 && keys["Space"]) velY = JUMP;
-        else velY = 0;
-    } else {
-        camera.position.y += velY;
-    }
-    
-    if(camera.position.y < -20) camera.position.set(0, 20, 0);
+        if(velY < 0 && keys["Space"]) velY = JUMP; else velY = 0;
+    } else { camera.position.y += velY; }
 
-    // MINING
+    if(camera.position.y < -30) camera.position.set(0, 20, 0);
+
     if(isMining) {
         ray.setFromCamera(new THREE.Vector2(), camera);
         const hits = ray.intersectObjects(Object.values(blocks));
         if(hits.length > 0 && hits[0].distance < 5) {
             miningTarget = hits[0].object;
-            // Bedrock check
-            if(miningTarget.userData.type === 5) return;
-
+            if(miningTarget.userData.type === 5) return; // Cannot break Bedrock
             miningProgress++;
-            // Visual Shake
-            miningTarget.position.x += (Math.random()-0.5)*0.05;
+            miningTarget.position.x += (Math.random()-0.5)*0.05; 
             miningTarget.position.y += (Math.random()-0.5)*0.05;
 
             if(miningProgress > miningTarget.userData.hp) {
-                // BREAK BLOCK
-                const type = miningTarget.userData.type;
-                const key = miningTarget.userData.key;
-                
+                const { key, type } = miningTarget.userData;
                 scene.remove(miningTarget);
                 delete blocks[key];
-                worldData[key] = -1; // Mark as Air (prevent respawn)
+                worldMap.set(key, -1);
                 
                 // Add to inventory
-                // Map block type to inventory ID (simple 1-to-1 for now)
-                // Grass(0)->Dirt(4), Stone(1)->Stone(1), Wood(2)->Wood(2), Leaves(3)->Leaves(3)
-                let dropId = type;
-                if(type === 0) dropId = 4; // Grass drops dirt
-                
-                const item = INVENTORY.find(i => i.id === dropId);
-                if(item) {
-                    item.count++;
-                    updateHUD();
-                }
-
-                miningTarget = null;
-                miningProgress = 0;
+                let drop = type === 0 ? 4 : type; // Grass drops dirt
+                const item = INVENTORY.find(i=>i.id===drop);
+                if(item) { item.count++; updateHUD(); }
+                miningTarget=null; miningProgress=0;
             }
         }
     }
-    
-    // GENERATE TERRAIN AROUND PLAYER
-    const px = Math.floor(camera.position.x / 16) * 16;
-    const pz = Math.floor(camera.position.z / 16) * 16;
-    generateChunk(px, pz);
-    generateChunk(px+16, pz); generateChunk(px-16, pz);
-    generateChunk(px, pz+16); generateChunk(px, pz-16);
 
     renderer.render(scene, camera);
 }
 
 function placeBlock() {
-    // Can only place if holding a block
     const item = INVENTORY[selectedSlot];
     if(item.id === 99 || item.count <= 0) return;
-
     ray.setFromCamera(new THREE.Vector2(), camera);
     const hits = ray.intersectObjects(Object.values(blocks));
     if(hits.length > 0 && hits[0].distance < 5) {
         const p = hits[0].point.add(hits[0].face.normal.multiplyScalar(0.5)).floor();
-        const key = `${p.x},${p.y},${p.z}`;
-        
-        // Don't place inside player
-        if(p.distanceTo(camera.position) < 1.5) return;
-        if(blocks[key]) return;
-
-        // Place logic
-        spawnBlock(p.x, p.y, p.z, item.id === 4 ? 0 : item.id); // Placing dirt becomes grass for visuals
-        item.count--;
-        updateHUD();
+        if(p.distanceTo(camera.position) > 1.5 && !blocks[`${p.x},${p.y},${p.z}`]) {
+            spawnBlock(p.x, p.y, p.z, item.id);
+            item.count--; updateHUD();
+        }
     }
 }
 
-window.onresize = () => {
-    camera.aspect = window.innerWidth/window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-};
+window.onresize = () => { camera.aspect=window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth,window.innerHeight); };
 </script>
 </body>
 </html>
