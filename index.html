@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Minecraft Phase 20: Stable & Jittery</title>
+<title>Minecraft Phase 21: Silent & Straight</title>
 <style>
   body { margin: 0; overflow: hidden; background: #87ceeb; font-family: monospace; user-select: none; }
   
@@ -96,13 +96,12 @@
 <script>
 // --- CONFIG ---
 const CHUNK_SIZE = 16;
-const RENDER_DIST = 4; // Low render distance = High FPS
 const GRAVITY = 28.0;
 const JUMP_FORCE = 9.5;
-const SPEED_WALK = 4.0;
+const SPEED_WALK = 4.5;
 const SPEED_SPRINT = 7.0;
 const PLAYER_HEIGHT = 1.6;
-const PLAYER_WIDTH = 0.6;
+const FPS_CAP = 60; // STRICT LIMIT TO STOP CHIRPING
 
 // --- ASSETS ---
 const canvas = document.createElement("canvas");
@@ -149,7 +148,6 @@ const MATS = [
     new THREE.MeshLambertMaterial({map:tBedrock.tex})
 ];
 
-// Inventory
 const INV = [
     {id:0, count:0, icon:tSide.url}, {id:1, count:0, icon:tStone.url},
     {id:2, count:0, icon:tWood.url}, {id:3, count:0, icon:tLeaves.url},
@@ -163,7 +161,9 @@ scene.background = new THREE.Color(0x87ceeb);
 scene.fog = new THREE.Fog(0x87ceeb, 10, 30);
 
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 1000);
-const renderer = new THREE.WebGLRenderer({antialias:false}); // False for FPS
+camera.rotation.order = "YXZ"; // CRITICAL FOR WALKING STRAIGHT
+
+const renderer = new THREE.WebGLRenderer({antialias:false});
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
@@ -183,7 +183,7 @@ function spawnBlock(x,y,z,type) {
     if(blocks[k]) return;
     const mesh = new THREE.Mesh(boxGeo, MATS[type]);
     mesh.position.set(x,y,z);
-    mesh.userData = {type, hp:type===1?60:20, k, origin: new THREE.Vector3(x,y,z)}; // Store origin for jitter reset
+    mesh.userData = {type, hp:type===1?60:20, k, origin: new THREE.Vector3(x,y,z)};
     scene.add(mesh);
     blocks[k] = mesh;
 }
@@ -212,40 +212,33 @@ function genChunk(cx, cz) {
     }
 }
 
-// --- PLAYER PHYSICS ---
+// --- PLAYER STATE ---
 const player = { pos: new THREE.Vector3(0,10,0), vel: new THREE.Vector3(), onGround: false, hp: 20, food: 20 };
 const keys = {};
 let yaw=0, pitch=0;
 
-function checkCol(x,y,z) {
-    const bx = Math.floor(x), by = Math.floor(y), bz = Math.floor(z);
-    // Simple point check + slight width check
-    if(blocks[`${bx},${by},${bz}`]) return true;
-    if(blocks[`${bx},${by+1},${bz}`]) return true; // Head check
-    return false;
-}
-
 function resolveCollision(newPos) {
-    // Check feet
-    const feetX = Math.floor(newPos.x);
-    const feetY = Math.floor(newPos.y);
-    const feetZ = Math.floor(newPos.z);
+    const w = 0.3; // Hitbox width
+    const bx = Math.floor(newPos.x); 
+    const by = Math.floor(newPos.y); 
+    const bz = Math.floor(newPos.z);
     
-    // Hitbox width approximation (checking 4 corners around player)
-    const w = 0.3;
-    if(blocks[`${Math.floor(newPos.x+w)},${feetY},${Math.floor(newPos.z+w)}`]) return true;
-    if(blocks[`${Math.floor(newPos.x-w)},${feetY},${Math.floor(newPos.z+w)}`]) return true;
-    if(blocks[`${Math.floor(newPos.x+w)},${feetY},${Math.floor(newPos.z-w)}`]) return true;
-    if(blocks[`${Math.floor(newPos.x-w)},${feetY},${Math.floor(newPos.z-w)}`]) return true;
+    // Check Feet Level (and slightly below for stability)
+    if(blocks[`${bx},${by},${bz}`]) return true;
     
-    // Head check
-    const headY = Math.floor(newPos.y + 1.6);
-    if(blocks[`${feetX},${headY},${feetZ}`]) return true;
+    // Check Head Level
+    if(blocks[`${bx},${Math.floor(newPos.y + 1.6)},${bz}`]) return true;
+
+    // Check surrounding width (prevent walking through corners)
+    if(blocks[`${Math.floor(newPos.x+w)},${by},${bz}`]) return true;
+    if(blocks[`${Math.floor(newPos.x-w)},${by},${bz}`]) return true;
+    if(blocks[`${bx},${by},${Math.floor(newPos.z+w)}`]) return true;
+    if(blocks[`${bx},${by},${Math.floor(newPos.z-w)}`]) return true;
 
     return false;
 }
 
-// --- GAME LOOP ---
+// --- MAIN LOOP ---
 let lastTime = 0;
 let lastChunkCheck = 0;
 let isMining = false;
@@ -255,52 +248,65 @@ const ray = new THREE.Raycaster();
 genChunk(0,0);
 updateUI();
 
+// ANIMATION LOOP WITH HARD FPS CAP
 function animate(time) {
     requestAnimationFrame(animate);
-    const dt = Math.min((time - lastTime)/1000, 0.1);
+    
+    // FPS GOVERNOR (Fixes Chirping)
+    const ms = time - lastTime;
+    if(ms < 1000/FPS_CAP) return; // Wait until next frame slice
+    
+    const dt = Math.min(ms/1000, 0.1); // Cap delta time for physics safety
     lastTime = time;
 
     if(player.hp <= 0) return;
 
-    // Movement
+    // --- MOVEMENT LOGIC (Fixed Direction) ---
     const speed = (keys["ShiftLeft"] ? SPEED_SPRINT : SPEED_WALK);
-    const dir = new THREE.Vector3();
-    const fwd = new THREE.Vector3(0,0,-1).applyAxisAngle(new THREE.Vector3(0,1,0), yaw);
+    const moveDir = new THREE.Vector3(0,0,0);
+
+    // Get Forward/Right vectors based on YAW ONLY (ignore pitch)
+    const forward = new THREE.Vector3(0,0,-1).applyAxisAngle(new THREE.Vector3(0,1,0), yaw);
     const right = new THREE.Vector3(1,0,0).applyAxisAngle(new THREE.Vector3(0,1,0), yaw);
 
-    if(keys["KeyW"]) dir.add(fwd);
-    if(keys["KeyS"]) dir.sub(fwd);
-    if(keys["KeyA"]) dir.sub(right);
-    if(keys["KeyD"]) dir.add(right);
+    if(keys["KeyW"]) moveDir.add(forward);
+    if(keys["KeyS"]) moveDir.sub(forward);
+    if(keys["KeyA"]) moveDir.sub(right);
+    if(keys["KeyD"]) moveDir.add(right);
 
-    if(dir.lengthSq() > 0) {
-        dir.normalize().multiplyScalar(speed * dt);
+    if(moveDir.lengthSq() > 0) {
+        moveDir.normalize().multiplyScalar(speed * dt);
         if(keys["ShiftLeft"]) { player.food -= dt*0.1; updateUI(); }
     }
 
-    // X axis
+    // X Axis Physics
     let testPos = player.pos.clone();
-    testPos.x += dir.x;
+    testPos.x += moveDir.x;
     if(!resolveCollision(testPos)) player.pos.x = testPos.x;
 
-    // Z axis
+    // Z Axis Physics
     testPos = player.pos.clone();
-    testPos.z += dir.z;
+    testPos.z += moveDir.z;
     if(!resolveCollision(testPos)) player.pos.z = testPos.z;
 
-    // Gravity / Y axis
+    // Y Axis / Gravity
     player.vel.y -= GRAVITY * dt;
     testPos = player.pos.clone();
     testPos.y += player.vel.y * dt;
 
     if(resolveCollision(testPos)) {
+        // Landed
         if(player.vel.y < -12) takeDamage(Math.floor(Math.abs(player.vel.y)-10));
         player.vel.y = 0;
         player.onGround = true;
-        // Snap to block top
-        player.pos.y = Math.round(player.pos.y);
+        player.pos.y = Math.round(player.pos.y); // Snap to grid
         
-        if(keys["Space"]) { player.vel.y = JUMP_FORCE; player.onGround=false; player.food-=0.2; updateUI(); }
+        if(keys["Space"]) { 
+            player.vel.y = JUMP_FORCE; 
+            player.onGround=false; 
+            player.food-=0.2; 
+            updateUI(); 
+        }
     } else {
         player.pos.y = testPos.y;
         player.onGround = false;
@@ -308,22 +314,21 @@ function animate(time) {
 
     if(player.pos.y < -30) respawn();
 
-    // SYNC CAMERA
-    camera.position.copy(player.pos);
-    camera.position.y += PLAYER_HEIGHT; // Eyes always 1.6 blocks above feet
+    // CAMERA SYNC
     camera.rotation.set(pitch, yaw, 0);
+    camera.position.copy(player.pos);
+    camera.position.y += PLAYER_HEIGHT;
 
-    // MINING LOGIC (Jitter)
+    // MINING JITTER
     if(isMining) {
         ray.setFromCamera(new THREE.Vector2(0,0), camera);
         const hits = ray.intersectObjects(Object.values(blocks));
         if(hits.length > 0 && hits[0].distance < 4.5) {
             miningTarget = hits[0].object;
             if(miningTarget.userData.type !== 5) { // No bedrock
-                // JITTER EFFECT
-                miningTarget.position.x = miningTarget.userData.origin.x + (Math.random()-0.5)*0.15;
-                miningTarget.position.y = miningTarget.userData.origin.y + (Math.random()-0.5)*0.15;
-                miningTarget.position.z = miningTarget.userData.origin.z + (Math.random()-0.5)*0.15;
+                miningTarget.position.x = miningTarget.userData.origin.x + (Math.random()-0.5)*0.1;
+                miningTarget.position.y = miningTarget.userData.origin.y + (Math.random()-0.5)*0.1;
+                miningTarget.position.z = miningTarget.userData.origin.z + (Math.random()-0.5)*0.1;
                 
                 miningTarget.userData.hp -= 1;
                 if(miningTarget.userData.hp <= 0) {
@@ -338,17 +343,16 @@ function animate(time) {
             }
         }
     } else if(miningTarget) {
-        // Reset block position if stopped mining
         miningTarget.position.copy(miningTarget.userData.origin);
         miningTarget = null;
     }
 
-    // SLOW CHUNK GEN
-    if(time - lastChunkCheck > 500) { // Check only every 0.5s
+    // THROTTLED WORLD GEN
+    if(time - lastChunkCheck > 500) { 
         lastChunkCheck = time;
         const px = Math.floor(player.pos.x/16)*16;
         const pz = Math.floor(player.pos.z/16)*16;
-        for(let x=px-16; x<=px+16; x+=16) genChunk(x, pz); // Reduced generation range
+        for(let x=px-16; x<=px+16; x+=16) genChunk(x, pz);
         for(let z=pz-16; z<=pz+16; z+=16) genChunk(px, z);
     }
 
@@ -384,11 +388,10 @@ function placeBlock() {
     if(hits.length>0 && hits[0].distance < 4.5) {
         const hit = hits[0];
         const p = hit.point.add(hit.face.normal.multiplyScalar(0.5)).floor();
-        // Prevent placing inside player
         const dx = Math.abs(p.x - player.pos.x);
         const dz = Math.abs(p.z - player.pos.z);
         const dy = p.y - player.pos.y;
-        if(dx < 0.8 && dz < 0.8 && dy >= 0 && dy < 2) return; // Simple inside check
+        if(dx < 0.8 && dz < 0.8 && dy >= 0 && dy < 2) return; 
 
         spawnBlock(p.x, p.y, p.z, item.id);
         item.count--;
@@ -397,7 +400,6 @@ function placeBlock() {
 }
 
 function updateUI() {
-    // Hotbar
     const bar = document.getElementById("hotbar-container");
     bar.innerHTML = "";
     INV.forEach((item,i)=>{
@@ -408,12 +410,10 @@ function updateUI() {
     });
     document.getElementById("hand").style.backgroundImage = `url(${INV[selSlot].icon})`;
     
-    // Hearts
     const hDiv = document.getElementById("hearts");
     hDiv.innerHTML = "";
     for(let i=0; i<10; i++) hDiv.innerHTML += `<img src="${i*2 < player.hp ? heartFull.url : heartEmpty.url}" class="heart">`;
 
-    // Food
     const fDiv = document.getElementById("hunger");
     fDiv.innerHTML = "";
     for(let i=0; i<10; i++) fDiv.innerHTML += `<img src="${i*2 < player.food ? foodIcon.url : ''}" class="food">`;
