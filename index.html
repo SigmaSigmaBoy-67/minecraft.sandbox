@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Minecraft Phase 21: Silent & Straight</title>
+<title>Minecraft Phase 22: Biomes & Stability</title>
 <style>
   body { margin: 0; overflow: hidden; background: #87ceeb; font-family: monospace; user-select: none; }
   
@@ -71,11 +71,18 @@
     text-shadow: 1px 1px 0 #000; font-weight: bold; font-size: 14px;
     background: rgba(0,0,0,0.3); padding: 5px;
   }
+  
+  #biome-debug {
+    position: fixed; top: 40px; left: 10px; color: yellow;
+    text-shadow: 1px 1px 0 #000; font-weight: bold; font-size: 14px;
+  }
 </style>
 </head>
 <body>
 
 <div id="controls">WASD: Move | SHIFT: Sprint | SPACE: Jump | CLICK: Mine/Place</div>
+<div id="biome-debug">Biome: Plains</div>
+
 <div id="ui-layer">
   <div id="crosshair"></div>
   <div id="stats-bar">
@@ -96,14 +103,14 @@
 <script>
 // --- CONFIG ---
 const CHUNK_SIZE = 16;
-const GRAVITY = 28.0;
-const JUMP_FORCE = 9.5;
+const GRAVITY = 30.0;
+const JUMP_FORCE = 11.0;
 const SPEED_WALK = 4.5;
-const SPEED_SPRINT = 7.0;
+const SPEED_SPRINT = 7.5;
 const PLAYER_HEIGHT = 1.6;
-const FPS_CAP = 60; // STRICT LIMIT TO STOP CHIRPING
+const PHYSICS_TICK = 1/60; // Physics runs exactly 60 times a sec
 
-// --- ASSETS ---
+// --- ASSETS GENERATOR ---
 const canvas = document.createElement("canvas");
 canvas.width = 16; canvas.height = 16;
 const ctx = canvas.getContext("2d");
@@ -129,39 +136,52 @@ const heartFull = makeTex(["rgba(0,0,0,0)"], c => drawHeart(c, "#ff0000"));
 const heartEmpty = makeTex(["rgba(0,0,0,0)"], c => drawHeart(c, "#550000"));
 const foodIcon = makeTex(["rgba(0,0,0,0)"], c => { c.fillStyle="#8d6e63"; c.beginPath(); c.arc(8,8,6,0,Math.PI*2); c.fill(); });
 
-// Blocks
+// Block Textures
 const tGrass = makeTex(["#4caf50", "#388e3c"]);
 const tDirt = makeTex(["#795548", "#5d4037"]);
 const tSide = makeTex(["#795548", "#5d4037"], c=>{c.fillStyle="#4caf50"; c.fillRect(0,0,16,3);});
 const tStone = makeTex(["#9e9e9e", "#757575"]);
 const tWood = makeTex(["#5d4037", "#3e2723"], c=>{c.fillStyle="#3e2723"; c.fillRect(4,0,2,16); c.fillRect(10,0,2,16);});
 const tLeaves = makeTex(["#2e7d32", "#4caf50"]);
+const tSand = makeTex(["#f6d7b0", "#e1bf92"]);
+const tCactus = makeTex(["#66bb6a", "#43a047"], c=>{c.fillStyle="#2e7d32";c.fillRect(2,2,2,2);c.fillRect(10,8,2,2);});
+const tSnow = makeTex(["#ffffff", "#eeeeee"]);
+const tIce = makeTex(["#b3e5fc", "#81d4fa"]);
 const tBedrock = makeTex(["#111", "#000"]);
 const tPick = makeTex(["rgba(0,0,0,0)"], c=>{c.fillStyle="#555"; c.fillRect(2,2,12,3); c.fillStyle="#6d4c41"; c.fillRect(7,5,2,9);});
 
+// Materials List
 const MATS = [
-    [new THREE.MeshLambertMaterial({map:tSide.tex}),new THREE.MeshLambertMaterial({map:tSide.tex}),new THREE.MeshLambertMaterial({map:tGrass.tex}),new THREE.MeshLambertMaterial({map:tDirt.tex}),new THREE.MeshLambertMaterial({map:tSide.tex}),new THREE.MeshLambertMaterial({map:tSide.tex})],
-    new THREE.MeshLambertMaterial({map:tStone.tex}),
-    new THREE.MeshLambertMaterial({map:tWood.tex}),
-    new THREE.MeshLambertMaterial({map:tLeaves.tex}),
-    new THREE.MeshLambertMaterial({map:tDirt.tex}),
-    new THREE.MeshLambertMaterial({map:tBedrock.tex})
+    [new THREE.MeshLambertMaterial({map:tSide.tex}),new THREE.MeshLambertMaterial({map:tSide.tex}),new THREE.MeshLambertMaterial({map:tGrass.tex}),new THREE.MeshLambertMaterial({map:tDirt.tex}),new THREE.MeshLambertMaterial({map:tSide.tex}),new THREE.MeshLambertMaterial({map:tSide.tex})], // 0: Grass
+    new THREE.MeshLambertMaterial({map:tStone.tex}), // 1: Stone
+    new THREE.MeshLambertMaterial({map:tWood.tex}), // 2: Wood
+    new THREE.MeshLambertMaterial({map:tLeaves.tex}), // 3: Leaves
+    new THREE.MeshLambertMaterial({map:tDirt.tex}), // 4: Dirt
+    new THREE.MeshLambertMaterial({map:tBedrock.tex}), // 5: Bedrock
+    new THREE.MeshLambertMaterial({map:tSand.tex}), // 6: Sand
+    new THREE.MeshLambertMaterial({map:tCactus.tex}), // 7: Cactus
+    new THREE.MeshLambertMaterial({map:tSnow.tex}), // 8: Snow
+    new THREE.MeshLambertMaterial({map:tIce.tex}) // 9: Ice
 ];
 
+// Inventory
 const INV = [
-    {id:0, count:0, icon:tSide.url}, {id:1, count:0, icon:tStone.url},
-    {id:2, count:0, icon:tWood.url}, {id:3, count:0, icon:tLeaves.url},
-    {id:4, count:0, icon:tDirt.url}, {id:99, count:1, icon:tPick.url}
+    {id:0, count:0, icon:tSide.url}, // Grass
+    {id:1, count:0, icon:tStone.url}, // Stone
+    {id:2, count:0, icon:tWood.url}, // Wood
+    {id:6, count:0, icon:tSand.url}, // Sand
+    {id:8, count:0, icon:tSnow.url}, // Snow
+    {id:99, count:1, icon:tPick.url} // Pickaxe
 ];
 let selSlot = 5;
 
 // --- THREE.JS ---
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
-scene.fog = new THREE.Fog(0x87ceeb, 10, 30);
+scene.fog = new THREE.Fog(0x87ceeb, 10, 40);
 
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 1000);
-camera.rotation.order = "YXZ"; // CRITICAL FOR WALKING STRAIGHT
+camera.rotation.order = "YXZ";
 
 const renderer = new THREE.WebGLRenderer({antialias:false});
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -169,11 +189,11 @@ document.body.appendChild(renderer.domElement);
 
 const ambient = new THREE.AmbientLight(0xffffff, 0.7);
 scene.add(ambient);
-const sun = new THREE.DirectionalLight(0xffffff, 0.5);
+const sun = new THREE.DirectionalLight(0xffffff, 0.6);
 sun.position.set(50,100,50);
 scene.add(sun);
 
-// --- WORLD ---
+// --- WORLD GEN (BIOMES) ---
 const blocks = {};
 const chunkSet = new Set();
 const boxGeo = new THREE.BoxGeometry(1,1,1);
@@ -183,12 +203,24 @@ function spawnBlock(x,y,z,type) {
     if(blocks[k]) return;
     const mesh = new THREE.Mesh(boxGeo, MATS[type]);
     mesh.position.set(x,y,z);
-    mesh.userData = {type, hp:type===1?60:20, k, origin: new THREE.Vector3(x,y,z)};
+    mesh.userData = {type, hp: (type===1||type===5)?60:20, k, origin: new THREE.Vector3(x,y,z)};
     scene.add(mesh);
     blocks[k] = mesh;
 }
 
-function getH(x,z) { return Math.floor(Math.sin(x/15)*5 + Math.cos(z/15)*5); }
+function getBiome(x, z) {
+    const noise = Math.sin(x/60) + Math.cos(z/60); // Large biomes
+    if(noise > 0.8) return 'desert';
+    if(noise < -0.8) return 'snow';
+    return 'plains';
+}
+
+function getHeight(x, z) {
+    const b = getBiome(x, z);
+    if(b === 'desert') return Math.floor(Math.sin(x/25)*3 + Math.cos(z/25)*3 + 2);
+    if(b === 'snow') return Math.floor(Math.sin(x/10)*6 + Math.cos(z/10)*6 + 10); // Higher mountains
+    return Math.floor(Math.sin(x/15)*4 + Math.cos(z/15)*4); // Plains
+}
 
 function genChunk(cx, cz) {
     const k = `${cx},${cz}`;
@@ -197,39 +229,58 @@ function genChunk(cx, cz) {
     
     for(let x=cx; x<cx+CHUNK_SIZE; x++) {
         for(let z=cz; z<cz+CHUNK_SIZE; z++) {
-            const h = getH(x,z);
+            const h = getHeight(x,z);
+            const biome = getBiome(x,z);
+            
             spawnBlock(x,-16,z,5); // Bedrock
-            for(let y=-15; y<h; y++) spawnBlock(x,y,z, y<h-3?1:4);
-            spawnBlock(x,h,z,0);
-            if(Math.random()<0.015) { // Tree
-                for(let i=1;i<5;i++) spawnBlock(x,h+i,z,2);
-                for(let ly=h+3;ly<=h+5;ly++) 
-                    for(let lx=x-2;lx<=x+2;lx++) 
-                        for(let lz=z-2;lz<=z+2;lz++) 
-                            if(Math.abs(lx-x)+Math.abs(lz-z)<3) spawnBlock(lx,ly,lz,3);
+
+            // Underground
+            for(let y=-15; y<h; y++) {
+                if(biome === 'desert') spawnBlock(x,y,z,6); // Sand underground
+                else spawnBlock(x,y,z, y<h-3 ? 1 : 4); // Stone/Dirt
+            }
+
+            // Surface
+            let surf = 0; // Grass
+            if(biome === 'desert') surf = 6; // Sand
+            if(biome === 'snow') surf = 8; // Snow
+            spawnBlock(x,h,z,surf);
+
+            // Flora
+            if(Math.random()<0.02) {
+                if(biome === 'plains') { // Oak Tree
+                    for(let i=1;i<5;i++) spawnBlock(x,h+i,z,2);
+                    for(let ly=h+3;ly<=h+5;ly++) 
+                        for(let lx=x-2;lx<=x+2;lx++) 
+                            for(let lz=z-2;lz<=z+2;lz++) 
+                                if(Math.abs(lx-x)+Math.abs(lz-z)<3) spawnBlock(lx,ly,lz,3);
+                } else if(biome === 'desert') { // Cactus
+                     spawnBlock(x,h+1,z,7); spawnBlock(x,h+2,z,7); spawnBlock(x,h+3,z,7);
+                } else if(biome === 'snow') { // Pine Tree (simplified)
+                    for(let i=1;i<6;i++) spawnBlock(x,h+i,z,2);
+                    for(let ly=h+2;ly<=h+5;ly++)
+                         for(let lx=x-1;lx<=x+1;lx++)
+                             for(let lz=z-1;lz<=z+1;lz++) spawnBlock(lx,ly,lz,3);
+                }
             }
         }
     }
 }
 
-// --- PLAYER STATE ---
+// --- PHYSICS ENGINE (FIXED TIME STEP) ---
 const player = { pos: new THREE.Vector3(0,10,0), vel: new THREE.Vector3(), onGround: false, hp: 20, food: 20 };
 const keys = {};
 let yaw=0, pitch=0;
 
 function resolveCollision(newPos) {
-    const w = 0.3; // Hitbox width
-    const bx = Math.floor(newPos.x); 
-    const by = Math.floor(newPos.y); 
-    const bz = Math.floor(newPos.z);
+    const w = 0.3;
+    const bx = Math.floor(newPos.x), by = Math.floor(newPos.y), bz = Math.floor(newPos.z);
     
-    // Check Feet Level (and slightly below for stability)
-    if(blocks[`${bx},${by},${bz}`]) return true;
+    // Check Blocks around player bounds
+    if(blocks[`${bx},${by},${bz}`]) return true; // Feet
+    if(blocks[`${bx},${Math.floor(newPos.y + 1.6)},${bz}`]) return true; // Head
     
-    // Check Head Level
-    if(blocks[`${bx},${Math.floor(newPos.y + 1.6)},${bz}`]) return true;
-
-    // Check surrounding width (prevent walking through corners)
+    // Check corners for wall sliding prevention
     if(blocks[`${Math.floor(newPos.x+w)},${by},${bz}`]) return true;
     if(blocks[`${Math.floor(newPos.x-w)},${by},${bz}`]) return true;
     if(blocks[`${bx},${by},${Math.floor(newPos.z+w)}`]) return true;
@@ -238,34 +289,12 @@ function resolveCollision(newPos) {
     return false;
 }
 
-// --- MAIN LOOP ---
-let lastTime = 0;
-let lastChunkCheck = 0;
-let isMining = false;
-let miningTarget = null;
-const ray = new THREE.Raycaster();
-
-genChunk(0,0);
-updateUI();
-
-// ANIMATION LOOP WITH HARD FPS CAP
-function animate(time) {
-    requestAnimationFrame(animate);
-    
-    // FPS GOVERNOR (Fixes Chirping)
-    const ms = time - lastTime;
-    if(ms < 1000/FPS_CAP) return; // Wait until next frame slice
-    
-    const dt = Math.min(ms/1000, 0.1); // Cap delta time for physics safety
-    lastTime = time;
-
+function updatePhysics() {
     if(player.hp <= 0) return;
-
-    // --- MOVEMENT LOGIC (Fixed Direction) ---
+    
+    // Input Handling
     const speed = (keys["ShiftLeft"] ? SPEED_SPRINT : SPEED_WALK);
     const moveDir = new THREE.Vector3(0,0,0);
-
-    // Get Forward/Right vectors based on YAW ONLY (ignore pitch)
     const forward = new THREE.Vector3(0,0,-1).applyAxisAngle(new THREE.Vector3(0,1,0), yaw);
     const right = new THREE.Vector3(1,0,0).applyAxisAngle(new THREE.Vector3(0,1,0), yaw);
 
@@ -275,70 +304,101 @@ function animate(time) {
     if(keys["KeyD"]) moveDir.add(right);
 
     if(moveDir.lengthSq() > 0) {
-        moveDir.normalize().multiplyScalar(speed * dt);
-        if(keys["ShiftLeft"]) { player.food -= dt*0.1; updateUI(); }
+        moveDir.normalize().multiplyScalar(speed * PHYSICS_TICK);
+        if(keys["ShiftLeft"]) { player.food -= PHYSICS_TICK * 0.1; updateUI(); }
     }
 
-    // X Axis Physics
+    // X Movement
     let testPos = player.pos.clone();
     testPos.x += moveDir.x;
     if(!resolveCollision(testPos)) player.pos.x = testPos.x;
 
-    // Z Axis Physics
+    // Z Movement
     testPos = player.pos.clone();
     testPos.z += moveDir.z;
     if(!resolveCollision(testPos)) player.pos.z = testPos.z;
 
-    // Y Axis / Gravity
-    player.vel.y -= GRAVITY * dt;
+    // Y Movement (Gravity)
+    player.vel.y -= GRAVITY * PHYSICS_TICK;
     testPos = player.pos.clone();
-    testPos.y += player.vel.y * dt;
+    testPos.y += player.vel.y * PHYSICS_TICK;
 
     if(resolveCollision(testPos)) {
-        // Landed
-        if(player.vel.y < -12) takeDamage(Math.floor(Math.abs(player.vel.y)-10));
+        // Impact Logic
+        if(player.vel.y < -15) { // 4 Block Fall Threshold approx
+            takeDamage(Math.floor((Math.abs(player.vel.y) - 15) / 2));
+        }
         player.vel.y = 0;
         player.onGround = true;
-        player.pos.y = Math.round(player.pos.y); // Snap to grid
+        player.pos.y = Math.round(player.pos.y);
         
         if(keys["Space"]) { 
             player.vel.y = JUMP_FORCE; 
             player.onGround=false; 
-            player.food-=0.2; 
-            updateUI(); 
+            player.food -= 0.2; updateUI(); 
         }
     } else {
         player.pos.y = testPos.y;
         player.onGround = false;
     }
-
+    
     if(player.pos.y < -30) respawn();
+}
 
-    // CAMERA SYNC
-    camera.rotation.set(pitch, yaw, 0);
+// --- MAIN LOOP (ACCUMULATOR) ---
+let lastTime = performance.now();
+let accumulator = 0;
+let isMining = false;
+let miningTarget = null;
+const ray = new THREE.Raycaster();
+
+genChunk(0,0);
+updateUI();
+
+function animate(currentTime) {
+    requestAnimationFrame(animate);
+    
+    const frameTime = (currentTime - lastTime) / 1000;
+    lastTime = currentTime;
+    accumulator += Math.min(frameTime, 0.1); // Cap to prevent spiral of death
+
+    // Run Physics Fixed Amount of times
+    while(accumulator >= PHYSICS_TICK) {
+        updatePhysics();
+        accumulator -= PHYSICS_TICK;
+    }
+
+    // Render Sync
     camera.position.copy(player.pos);
     camera.position.y += PLAYER_HEIGHT;
+    camera.rotation.set(pitch, yaw, 0);
 
-    // MINING JITTER
+    // Biome Debug
+    const b = getBiome(Math.floor(player.pos.x), Math.floor(player.pos.z));
+    document.getElementById("biome-debug").innerText = "Biome: " + b.toUpperCase();
+    scene.fog.color.setHex(b==='desert'?0xeeddbb : (b==='snow'?0xddeeff : 0x87ceeb));
+    scene.background.setHex(b==='desert'?0xeeddbb : (b==='snow'?0xddeeff : 0x87ceeb));
+
+    // Mining Jitter (Visual only)
     if(isMining) {
         ray.setFromCamera(new THREE.Vector2(0,0), camera);
         const hits = ray.intersectObjects(Object.values(blocks));
-        if(hits.length > 0 && hits[0].distance < 4.5) {
+        if(hits.length>0 && hits[0].distance < 4.5) {
             miningTarget = hits[0].object;
-            if(miningTarget.userData.type !== 5) { // No bedrock
-                miningTarget.position.x = miningTarget.userData.origin.x + (Math.random()-0.5)*0.1;
-                miningTarget.position.y = miningTarget.userData.origin.y + (Math.random()-0.5)*0.1;
-                miningTarget.position.z = miningTarget.userData.origin.z + (Math.random()-0.5)*0.1;
-                
+            if(miningTarget.userData.type!==5) {
+                miningTarget.position.set(
+                    miningTarget.userData.origin.x + (Math.random()-0.5)*0.1,
+                    miningTarget.userData.origin.y + (Math.random()-0.5)*0.1,
+                    miningTarget.userData.origin.z + (Math.random()-0.5)*0.1
+                );
                 miningTarget.userData.hp -= 1;
-                if(miningTarget.userData.hp <= 0) {
-                    const drop = miningTarget.userData.type === 0 ? 4 : miningTarget.userData.type;
+                if(miningTarget.userData.hp<=0) {
+                    const drop = miningTarget.userData.type===0?4:miningTarget.userData.type;
                     const item = INV.find(i=>i.id===drop);
-                    if(item) { item.count++; updateUI(); }
-                    
+                    if(item){item.count++;updateUI();}
                     scene.remove(miningTarget);
                     delete blocks[miningTarget.userData.k];
-                    miningTarget = null;
+                    miningTarget=null;
                 }
             }
         }
@@ -347,9 +407,8 @@ function animate(time) {
         miningTarget = null;
     }
 
-    // THROTTLED WORLD GEN
-    if(time - lastChunkCheck > 500) { 
-        lastChunkCheck = time;
+    // Throttled Chunk Gen
+    if(Math.random()<0.1) {
         const px = Math.floor(player.pos.x/16)*16;
         const pz = Math.floor(player.pos.z/16)*16;
         for(let x=px-16; x<=px+16; x+=16) genChunk(x, pz);
@@ -360,7 +419,7 @@ function animate(time) {
 }
 requestAnimationFrame(animate);
 
-// --- INPUTS ---
+// --- CONTROLS ---
 document.addEventListener("mousedown", e=>{
     if(!document.pointerLockElement) { document.body.requestPointerLock(); return; }
     const hand = document.getElementById("hand");
@@ -369,10 +428,8 @@ document.addEventListener("mousedown", e=>{
     if(e.button===2) placeBlock();
 });
 document.addEventListener("mouseup", () => isMining = false);
-
-document.addEventListener("keydown", e=>{ keys[e.code]=true; if(e.key>='1'&&e.key<='6'){selSlot=parseInt(e.key)-1; updateUI();} });
+document.addEventListener("keydown", e=>{ keys[e.code]=true; if(e.key>='1'&&e.key<='5'){selSlot=parseInt(e.key)-1; updateUI();} if(e.key==='6'){selSlot=5;updateUI();} });
 document.addEventListener("keyup", e=>keys[e.code]=false);
-
 document.addEventListener("mousemove", e=>{
     if(document.pointerLockElement) {
         yaw -= e.movementX*0.002;
@@ -386,13 +443,9 @@ function placeBlock() {
     ray.setFromCamera(new THREE.Vector2(0,0), camera);
     const hits = ray.intersectObjects(Object.values(blocks));
     if(hits.length>0 && hits[0].distance < 4.5) {
-        const hit = hits[0];
-        const p = hit.point.add(hit.face.normal.multiplyScalar(0.5)).floor();
-        const dx = Math.abs(p.x - player.pos.x);
-        const dz = Math.abs(p.z - player.pos.z);
-        const dy = p.y - player.pos.y;
-        if(dx < 0.8 && dz < 0.8 && dy >= 0 && dy < 2) return; 
-
+        const p = hits[0].point.add(hits[0].face.normal.multiplyScalar(0.5)).floor();
+        const dx=Math.abs(p.x-player.pos.x), dz=Math.abs(p.z-player.pos.z), dy=p.y-player.pos.y;
+        if(dx<0.8 && dz<0.8 && dy>=0 && dy<2) return;
         spawnBlock(p.x, p.y, p.z, item.id);
         item.count--;
         updateUI();
@@ -413,24 +466,21 @@ function updateUI() {
     const hDiv = document.getElementById("hearts");
     hDiv.innerHTML = "";
     for(let i=0; i<10; i++) hDiv.innerHTML += `<img src="${i*2 < player.hp ? heartFull.url : heartEmpty.url}" class="heart">`;
-
     const fDiv = document.getElementById("hunger");
     fDiv.innerHTML = "";
     for(let i=0; i<10; i++) fDiv.innerHTML += `<img src="${i*2 < player.food ? foodIcon.url : ''}" class="food">`;
 }
 
 function takeDamage(amt) {
+    if(amt<=0) return;
     player.hp -= amt;
     updateUI();
-    if(player.hp <= 0) {
-        document.getElementById("death-screen").style.display = "flex";
-        document.exitPointerLock();
-    }
+    if(player.hp <= 0) { document.getElementById("death-screen").style.display = "flex"; document.exitPointerLock(); }
 }
 
 function respawn() {
     player.hp = 20; player.food = 20; player.vel.set(0,0,0);
-    player.pos.set(0,10,0);
+    player.pos.set(0,20,0);
     document.getElementById("death-screen").style.display = "none";
     document.body.requestPointerLock();
     updateUI();
